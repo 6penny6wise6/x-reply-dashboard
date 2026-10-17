@@ -35,13 +35,24 @@ def master_key(pw, salt):
 def page_key(mk, bsalt):
     return HKDF(hashes.SHA256(), 32, bsalt, INFO).derive(mk)
 
+_CACHE = {}
 def embed_images(html):
     def rep(m):
         p = os.path.join(HERE, m.group(2))
         if not os.path.exists(p):
             return m.group(0)
-        mt = mimetypes.guess_type(p)[0] or 'image/png'
-        return m.group(1) + 'data:' + mt + ';base64,' + b64(open(p, 'rb').read()) + '"'
+        if p not in _CACHE:
+            try:
+                from PIL import Image
+                import io
+                im = Image.open(p).convert('RGB')
+                im.thumbnail((1080, 1350))
+                buf = io.BytesIO(); im.save(buf, 'JPEG', quality=82, optimize=True, progressive=True)
+                _CACHE[p] = 'data:image/jpeg;base64,' + b64(buf.getvalue())
+            except Exception:
+                mt = mimetypes.guess_type(p)[0] or 'image/png'
+                _CACHE[p] = 'data:' + mt + ';base64,' + b64(open(p, 'rb').read())
+        return m.group(1) + _CACHE[p] + '"'
     return re.sub(r'(src=")(img/[^"]+)"', rep, html)
 
 def encrypt(html):
