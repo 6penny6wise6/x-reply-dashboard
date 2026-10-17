@@ -70,7 +70,7 @@ function tick(){var c=ct(),now=c.h*3600+c.m*60+c.s,r,q;
  document.getElementById("cd2").textContent=r+ago(BUILT);document.getElementById("cd1").textContent=q+ago(RIDDLE)}
 tick();setInterval(tick,1000);</script>'''
 
-# Manual mode + live sync / pending / done buttons
+# Manual mode + live sync / Mark done = fully done
 MAN=r'''<script>
 function _lsGet(k,fb){try{var v=localStorage.getItem(k);return v?JSON.parse(v):fb}catch(e){return fb}}
 function _lsSet(k,v){try{localStorage.setItem(k,JSON.stringify(v))}catch(e){}}
@@ -85,13 +85,38 @@ function setBack(id,on){var m=backMap();if(on)m[id]=1;else delete m[id];_lsSet("
 function doneMap(){return _lsGet("xdash_done",{})}
 function setDone(kind,id,on){var m=doneMap();var k=kind+":"+id;if(on)m[k]=1;else delete m[k];_lsSet("xdash_done",m)}
 function isDone(kind,id){return !!doneMap()[kind+":"+id]}
+function migrateDoneMarks(){
+  /* Old Mark done only set xdash_done / replied. Treat any existing done mark as FULLY done. */
+  var m=doneMap(), changed=false;
+  Object.keys(m).forEach(function(k){
+    if(!m[k])return;
+    var parts=k.split(":"); if(parts.length<2)return;
+    var kind=parts[0], id=parts.slice(1).join(":");
+    if(kind==="r"||kind==="o"){
+      if(!repliedMap()[id]){setRepliedLocal(id,true);changed=true}
+      if(!likedMap()[id]){setLiked(id,true);changed=true}
+      setBack(id,false);
+    }else if(kind==="p"){
+      if(!answeredMap()[id]){setAnswered(id,true);changed=true}
+    }
+  });
+  return changed;
+}
+function itemFullyDone(el){
+  if(!el||!el.dataset.id)return false;
+  if(itemForcedBack(el))return false;
+  var id=el.dataset.id;
+  if(el.classList.contains("pc"))return !!isDone("p",id)||(!!getPosted(id)&&!!answeredMap()[id]);
+  if(el.classList.contains("oi"))return !!isDone("o",id)||(itemReplied(el)&&itemLiked(el));
+  return !!isDone("r",id)||(itemReplied(el)&&itemLiked(el));
+}
 function getPosted(id){var m=_lsGet("xdash_posted",{});return m[id]||""}
 function setPosted(id,sid){var m=_lsGet("xdash_posted",{});if(sid)m[id]=sid;else delete m[id];_lsSet("xdash_posted",m)}
 function answeredMap(){return _lsGet("xdash_answered",{})}
 function setAnswered(id,on){var m=answeredMap();if(on)m[id]=1;else delete m[id];_lsSet("xdash_answered",m)}
 
 function itemReplied(el){if(!el)return false;var id=el.dataset.id;return el.dataset.replied==="1"||!!repliedMap()[id]||!!isDone("r",id)||!!isDone("o",id)}
-function itemLiked(el){if(!el)return false;return el.dataset.liked==="1"||!!likedMap()[el.dataset.id]}
+function itemLiked(el){if(!el)return false;var id=el.dataset.id;return el.dataset.liked==="1"||!!likedMap()[id]||!!isDone("r",id)||!!isDone("o",id)}
 function itemForcedBack(el){return !!(el&&backMap()[el.dataset.id])}
 function itemPending(el){if(!el)return null;return pendingMap()[el.dataset.id]||null}
 function postIsDone(el){if(!el)return false;var id=el.dataset.id;return !!isDone("p",id)||!!(el.dataset.posted)||!!getPosted(id)}
@@ -120,13 +145,17 @@ function ensureUndo(el,kind){
   var row=el.querySelector(".undo-row");
   if(!row){row=document.createElement("div");row.className="undo-row q";el.appendChild(row)}
   var parts=[];
+  var id=el.dataset.id;
   if(kind==="reply"||kind==="opp"){
-    if(likedMap()[el.dataset.id]&&el.dataset.liked!=="1")parts.push('<a href="#" class="undolink" data-u="like">undo like</a>');
-    if(repliedMap()[el.dataset.id]&&el.dataset.replied!=="1")parts.push('<a href="#" class="undolink" data-u="reply">undo reply</a>');
+    if(isDone("r",id)||isDone("o",id)||((likedMap()[id]||repliedMap()[id])&&!(el.dataset.liked==="1"&&el.dataset.replied==="1")))
+      parts.push('<a href="#" class="undolink" data-u="full">undo mark done</a>');
+    else{
+      if(likedMap()[id]&&el.dataset.liked!=="1")parts.push('<a href="#" class="undolink" data-u="like">undo like</a>');
+      if(repliedMap()[id]&&el.dataset.replied!=="1")parts.push('<a href="#" class="undolink" data-u="reply">undo reply</a>');
+    }
   }
   if(kind==="post"){
-    if(isDone("p",el.dataset.id))parts.push('<a href="#" class="undolink" data-u="post">undo posted</a>');
-    if(answeredMap()[el.dataset.id])parts.push('<a href="#" class="undolink" data-u="ans">undo answer</a>');
+    if(isDone("p",id)||answeredMap()[id])parts.push('<a href="#" class="undolink" data-u="full">undo mark done</a>');
   }
   row.innerHTML=parts.join(" · ");
   row.style.display=parts.length?"":"none";
@@ -147,7 +176,8 @@ function ensureConfirm(el){
 }
 function paintChips(el){
   var box=el.querySelector(".chips");if(!box)return;
-  var r=itemReplied(el),l=itemLiked(el),pend=itemPending(el);
+  var full=itemFullyDone(el),r=itemReplied(el),l=itemLiked(el),pend=itemPending(el);
+  if(full){box.innerHTML='<span class="chip ok">✅ fully done</span><span class="chip ok">↩️ replied ✓</span><span class="chip ok">❤️ liked ✓</span>';return}
   var rs=r?"↩️ replied ✓":(pend&&pend.kind==="reply"?"⏳ confirm reply":"↩️ not replied");
   var ls=l?"❤️ liked ✓":"❤️ not liked";
   box.innerHTML='<span class="chip '+(r?"ok":(pend&&pend.kind==="reply"?"pend":"no"))+'">'+rs+'</span>'+
@@ -190,10 +220,9 @@ function paintActionButtons(el){
       if(href&&href!=="#"){ans.className="btn ansbtn";ans.style.background="#7856ff";ans.textContent="💡 Post answer";ans.setAttribute("href",href);ans.removeAttribute("aria-disabled");ans.onclick=null;}
     }
   }
-  // mark-done checkbox
+  // mark-done checkbox = fully done
   var cb=el.querySelector(".mdone");
-  if(cb&&(kind==="reply"||kind==="opp")){cb.checked=itemReplied(el)}
-  if(cb&&kind==="post"){cb.checked=postIsDone(el)||!!isDone("p",el.dataset.id)}
+  if(cb)cb.checked=itemFullyDone(el);
   paintChips(el);
   ensureConfirm(el);
   ensureUndo(el,kind);
@@ -219,7 +248,7 @@ function updProg(batch){
   if(!batch)return;
   var items=[].slice.call(batch.querySelectorAll(".bi"));
   var act=items.filter(function(e){return !e.classList.contains("hist")});
-  var done=act.filter(function(e){return itemReplied(e)&&itemLiked(e)}).length;
+  var done=act.filter(function(e){return itemFullyDone(e)}).length;
   var el=batch.querySelector(".prog");if(el)el.textContent=done+" of "+act.length+" fully done";
   var badge=batch.querySelector(".bcount");if(badge)badge.textContent=String(act.length);
   batch.style.display=act.length?"":"none";
@@ -240,11 +269,13 @@ function updHistEmpty(){
 function reconcileItem(el){
   if(!el||!el.dataset.id)return;
   paintActionButtons(el);
-  if(el.classList.contains("pc"))return;
-  var both=itemReplied(el)&&itemLiked(el),back=itemForcedBack(el);
+  if(el.classList.contains("pc")){
+    /* posts stay on Post tab when done; no History move required */
+    return;
+  }
+  var both=itemFullyDone(el),back=itemForcedBack(el);
   if(both&&!back){el.classList.add("hist");el.style.display="none";ensureHistCard(el)}
-  else{el.classList.remove("hist");if(el.style.display==="none")el.style.display="";
-    var list=histList();if(list){var hc=list.querySelector('.hc[data-id="'+el.dataset.id+'"]');if(hc&&!hc.getAttribute("data-server")&&!(itemReplied(el)&&itemLiked(el)&&!back)){/* keep */}}}
+  else{el.classList.remove("hist");if(el.style.display==="none")el.style.display=""}
 }
 function syncId(id){
   if(!id)return;
@@ -268,15 +299,25 @@ function resyncAll(){
 function markDone(cb,kind){
   var sel=kind==="r"?".bi,.ri":kind==="o"?".oi":".pc";
   var el=cb.closest(sel);var id=el&&el.dataset.id;if(!id)return;
-  setDone(kind,id,cb.checked);
-  if(kind==="r"||kind==="o"){setRepliedLocal(id,cb.checked);if(cb.checked){setBack(id,false);setPending(id,null)}}
-  if(kind==="p"&&cb.checked)setPending(id,null);
+  var on=!!cb.checked;
+  setDone(kind,id,on);
+  if(kind==="r"||kind==="o"){
+    /* Mark done = FULLY DONE: replied + liked */
+    setRepliedLocal(id,on);
+    setLiked(id,on);
+    if(on){setBack(id,false);setPending(id,null)}
+  }
+  if(kind==="p"){
+    /* Post cards: posted + answered */
+    if(on){setAnswered(id,true);setPending(id,null)}
+    else setAnswered(id,false);
+  }
   rememberFrom(el);syncId(id);
 }
 function moveBack(id){
-  setBack(id,true);setLiked(id,false);setRepliedLocal(id,false);setDone("r",id,false);setDone("o",id,false);setPending(id,null);
+  setBack(id,true);setLiked(id,false);setRepliedLocal(id,false);setDone("r",id,false);setDone("o",id,false);setDone("p",id,false);setAnswered(id,false);setPending(id,null);
   var list=histList();if(list){var hc=list.querySelector('.hc[data-id="'+id+'"]');if(hc&&!hc.getAttribute("data-server"))hc.parentNode.removeChild(hc)}
-  syncId(id);rememberFrom(document.querySelector('.bi[data-id="'+id+'"], .oi[data-id="'+id+'"]'));
+  syncId(id);rememberFrom(document.querySelector('.bi[data-id="'+id+'"], .ri[data-id="'+id+'"], .oi[data-id="'+id+'"]'));
 }
 function parseStatusId(v){if(!v)return "";v=(""+v).trim();var m=v.match(/(?:status\/|statuses\/|=)(\d{5,})/);if(m)return m[1];if(/^\d{5,}$/.test(v))return v;return ""}
 function savePosted(inp){var c=inp.closest(".pc"),id=c.dataset.id,sid=parseStatusId(inp.value);inp.value=sid;setPosted(id,sid);showAns(c,sid);setPending(id,null);rememberFrom(c);syncId(id)}
@@ -326,12 +367,13 @@ document.addEventListener("click",function(e){
     else{setPending(el.dataset.id,null)}
     rememberFrom(el);syncId(el.dataset.id);return}
   var und=t.closest("a.undolink");
-  if(und){e.preventDefault();var el=und.closest(".bi,.ri,.oi,.pc");if(!el)return;var u=und.getAttribute("data-u");
-    if(u==="like")setLiked(el.dataset.id,false);
-    if(u==="reply"){setRepliedLocal(el.dataset.id,false);setDone("r",el.dataset.id,false);setDone("o",el.dataset.id,false)}
-    if(u==="post")setDone("p",el.dataset.id,false);
-    if(u==="ans")setAnswered(el.dataset.id,false);
-    rememberFrom(el);syncId(el.dataset.id);return}
+  if(und){e.preventDefault();var el=und.closest(".bi,.ri,.oi,.pc");if(!el)return;var u=und.getAttribute("data-u");var id=el.dataset.id;
+    if(u==="like")setLiked(id,false);
+    if(u==="reply"){setRepliedLocal(id,false);setDone("r",id,false);setDone("o",id,false)}
+    if(u==="post")setDone("p",id,false);
+    if(u==="ans")setAnswered(id,false);
+    if(u==="full"){setLiked(id,false);setRepliedLocal(id,false);setDone("r",id,false);setDone("o",id,false);setDone("p",id,false);setAnswered(id,false);setPending(id,null);setBack(id,true)}
+    rememberFrom(el);syncId(id);return}
   var like=t.closest("a.likebtn");if(like&&!like.getAttribute("aria-disabled"))onLikeTap(like);
   var reply=t.closest("a.replybtn");if(reply&&!reply.getAttribute("aria-disabled"))onReplyTap(reply);
   var post=t.closest("a.postbtn");if(post&&!post.getAttribute("aria-disabled"))onPostTap(post);
@@ -362,6 +404,7 @@ setInterval(pollScan,60000);
 setTimeout(pollScan,8000);
 
 (function(){
+  migrateDoneMarks();
   document.querySelectorAll("a.likebtn,a.replybtn,a.postbtn,a.ansbtn").forEach(function(a){if(a.getAttribute("href")&&!a.getAttribute("data-href"))a.setAttribute("data-href",a.getAttribute("href"))});
   document.querySelectorAll(".pc").forEach(function(c){
     var sid=getPosted(c.dataset.id)||(c.dataset.posted||"");
@@ -447,7 +490,7 @@ for o in opps:
         f'<div class="d">{E(o["caption"])}</div>{chips(o.get("replied"), o.get("liked"))}'
         f'<div class="btn-row"><a target="_blank" rel="noopener" class="btn replybtn" href="{link}" data-href="{link}">↩️ Post reply</a>'
         f'<a target="_blank" rel="noopener" class="btn likebtn" style="flex:0 0 32%;background:#f91880" href="{llink}" data-href="{llink}">❤️ Like</a></div>'
-        f'<div class="mdrow"><label><input type="checkbox" class="mdone" onchange="markDone(this,\'o\')"> Mark done (replied)</label></div>'
+        f'<div class="mdrow"><label><input type="checkbox" class="mdone" onchange="markDone(this,\'o\')"> Mark done</label></div>'
         f'</div></details>'
     )
 if not opps: out.append('<div class="q">Nothing new right now. The next scan runs within the hour, or tap Scan now.</div>')
@@ -457,7 +500,7 @@ allr=[dict(r,thread=s['title'],my_comment=s.get('my_comment','')) for s in secs 
 allr.sort(key=lambda r:-(r.get('views') or 0))
 bs=[allr[i:i+8] for i in range(0,len(allr),8)]
 if bs:
-    out.append('<h2 style="font-size:17px;margin:14px 0 6px">↩️ Manual posting (phone)</h2><div class="q">Tap ↩️ Post reply or ❤️ Like — buttons lock when done. After Post reply, confirm when you come back. When both are done it moves to History. Batch 1 is top-viewed.</div>')
+    out.append('<h2 style="font-size:17px;margin:14px 0 6px">↩️ Manual posting (phone)</h2><div class="q">Tap ↩️ Post reply or ❤️ Like, or check Mark done to finish an item in one tap (locks both + moves to History). After Post reply without Mark done, confirm when you come back. Batch 1 is top-viewed.</div>')
 for bi,b in enumerate(bs,1):
     out.append(f'<details class="batch"{" open" if bi==1 else ""}><summary><div class="t"><span class="tt">Batch {bi} of {len(bs)}</span><span class="prog" id="prog{bi}">0 of {len(b)} fully done</span><span class="b bcount">{len(b)}</span></div></summary><div class="in" id="batch{bi}">')
     for r in b:
@@ -475,7 +518,7 @@ for bi,b in enumerate(bs,1):
             f'<a target="_blank" rel="noopener" class="btn replybtn" href="{rlink}" data-href="{rlink}">↩️ Post reply</a>'
             f'<a target="_blank" rel="noopener" class="btn likebtn" style="flex:0 0 32%;background:#f91880" href="{llink}" data-href="{llink}">❤️ Like</a>'
             f'</div>'
-            f'<div class="mdrow"><label><input type="checkbox" class="mdone" onchange="markDone(this,\'r\')"> Mark done (replied)</label>'
+            f'<div class="mdrow"><label><input type="checkbox" class="mdone" onchange="markDone(this,\'r\')"> Mark done</label>'
             f'<label><input type="checkbox" class="drop" onchange="this.closest(\'.bi\').style.opacity=this.checked?.35:\'\'"> Drop from Approve</label></div>'
             f'</div>'
         )
@@ -505,7 +548,7 @@ for s in secs:
             f'<div class="d">{E(r["draft"])}</div>{chips(r.get("replied"), r.get("liked"))}'
             f'<div class="btn-row"><a target="_blank" rel="noopener" class="btn likebtn" style="flex:0 0 32%;background:#f91880" href="{llink}" data-href="{llink}">❤️ Like</a>'
             f'<a target="_blank" rel="noopener" class="btn replybtn" href="{link}" data-href="{link}">↩️ Post reply</a></div>'
-            f'<div class="mdrow"><label><input type="checkbox" class="mdone" onchange="markDone(this,\'r\')"> Mark done (replied)</label></div></div>'
+            f'<div class="mdrow"><label><input type="checkbox" class="mdone" onchange="markDone(this,\'r\')"> Mark done</label></div></div>'
         )
     out.append('</div></details>')
 
