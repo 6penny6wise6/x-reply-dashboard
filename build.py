@@ -607,7 +607,8 @@ function paintNow(){var bar=document.getElementById("nowBar");if(!bar)return;var
   else{var a=document.createElement("a");a.className="btn nowpost";a.target="_blank";a.rel="noopener";a.href=href;a.textContent="📤 Post now";a.setAttribute("data-for",due.dataset.id);row.appendChild(a)}
   var j=document.createElement("button");j.type="button";j.className="btn btn-sec";j.textContent="↓ show card";j.onclick=function(){applyHere(due);due.scrollIntoView({block:"center"})};row.appendChild(j);bar.appendChild(row);
  }else if(next){bar.className="nowbar nownext";bar.style.display="";bar.textContent="⏭ next post: "+next.dataset.title+" at "+next.dataset.ptime}
- else{bar.style.display="none"}}
+ else{var tm=null;document.querySelectorAll(".pc").forEach(function(c){if(tm||postIsDone(c)||c.dataset.day<=n.day)return;tm=c});
+  if(tm){bar.className="nowbar nownext";bar.style.display="";bar.textContent="⏭ next post: "+tm.dataset.title+" on "+(tm.dataset.sday||tm.dataset.day)+" at "+tm.dataset.ptime}else bar.style.display="none"}}
 document.addEventListener("click",function(e){var a=e.target&&e.target.closest&&e.target.closest("a.nowpost");if(!a)return;var c=document.querySelector('.pc[data-id="'+a.getAttribute("data-for")+'"]');if(c&&!postIsDone(c)){setPending(c.dataset.id,"post");later(function(){rememberFrom(c);syncId(c.dataset.id);bar_reset();paintNow()})}},true);
 function bar_reset(){var nb=document.getElementById("nowBar");if(nb)nb.dataset.k=""}
 paintNow();setInterval(paintNow,2000);
@@ -664,6 +665,7 @@ CSS_EXTRA = (
 "#nowBar{position:static;background:#1a1f12;border:2px solid #ffd400;border-radius:14px;padding:10px 12px;margin:10px 0;box-shadow:0 6px 18px rgba(0,0,0,.5)}"
 "#nowBar.nownext{border:1px solid #2f3336;background:#16181c;color:#8b98a5;font-size:14px;padding:8px 12px}"
 ".nowh{font-weight:700;font-size:16px;color:#ffd400;margin-bottom:6px}.nowimg{width:100%;max-height:22vh;object-fit:contain;border-radius:10px;background:#fff;margin:6px 0}"
+".dayh{font-size:15px;color:#8b98a5;margin:16px 0 0;font-weight:600}"
 ".ntag{font-size:12px;color:#8b98a5}.revnote{color:#ffad1f;margin:4px 0 8px}"
 )
 
@@ -796,12 +798,22 @@ def ptm(p):
 P=['</div></div><div id="t3" style="display:none"><h2 style="font-size:18px;margin:14px 0 4px">📝 Post to our page <span class="b'+(' z' if not posts else '')+f'">{len(posts)}</span></h2><div class="cd">original posts count toward monetization, replies don\'t. today\'s slots are spaced 1 to 2 hours apart.</div><div class="q">🖼 Save image, tap 📤 Post now, then attach the image in the composer. Intents can\'t attach images. Nothing posts from this page.</div>']
 _today=datetime.datetime.now(zoneinfo.ZoneInfo('America/Chicago')).strftime('%Y-%m-%d')
 def _pday(p): return p.get('slot_date') or _today
+_tmrw=(datetime.date.fromisoformat(_today)+datetime.timedelta(days=1)).isoformat()
+_curgrp=None; _later_open=False
 P.append('<div id="nowBar" style="display:none"></div><div class="q revnote">⚠️ if X shows Under review, your checkmark is probably being re-verified after the avatar change. wait it out, don\'t repost</div>')
 for p in sorted(posts,key=lambda p:(_pday(p),ptm(p),p.get('created_ms',0))):
     link='https://x.com/intent/post?text='+u.quote(p['text'].strip(),safe='')
     img=p.get('image'); absimg=('/workspace/x-dashboard/'+img) if img else 'none'
-    _dlab='' if _pday(p)==_today else datetime.date.fromisoformat(_pday(p)).strftime('%a %b %-d')+' · '
-    pt=f'<span class="b{" z" if _dlab else ""}">🕒 slot {_dlab}{E(p["post_time"])}</span>' if p.get('post_time') else ''
+    _dlab=datetime.date.fromisoformat(_pday(p)).strftime('%a %b %-d')+' · '
+    pt=f'<span class="b{" z" if _pday(p)>_tmrw else ""}">🕒 {"today" if _pday(p)==_today else ("tomorrow" if _pday(p)==_tmrw else "")}{" · " if _pday(p) in (_today,_tmrw) else ""}{_dlab}{E(p["post_time"])}</span>' if p.get('post_time') else ''
+    if _pday(p)!=_curgrp:
+        _g=_pday(p)
+        if _g>_tmrw and not _later_open:
+            _nl=len([x for x in posts if _pday(x)>_tmrw])
+            P.append(f'<details class="laterdays"><summary><div class="t"><span class="tt">📅 Later days</span><span class="b z">{_nl}</span></div><div class="st">4 a day at 8 AM, 12 PM, 4 PM, 8 PM CT</div></summary><div class="in">'); _later_open=True
+        _gl=datetime.date.fromisoformat(_g).strftime('%A %b %-d')
+        P.append(f'<h3 class="dayh">{"Today · " if _g==_today else ("Tomorrow · " if _g==_tmrw else ("Overdue · " if _g<_today else ""))}{_gl}</h3>')
+        _curgrp=_g
     im=f'<img id="pi_{E(p["id"])}" src="{E(img)}" style="width:100%;border-radius:10px;background:#fff;margin:8px 0"><div class="q">intents can\'t attach images, so save the image and attach it in the composer. <a class="sv" data-img="pi_{E(p["id"])}" data-name="{E(img.split("/")[-1])}" href="#" target="_blank" rel="noopener">🖼 Save image</a></div>' if img else ''
     nt=f'<div class="q" style="color:#ffad1f">💡 {E(p["note"])}</div>' if p.get('note') else ''
     if p.get('not_posted_note'): nt=f'<div class="q" style="color:#f4212e">↻ not posted: {E(p["not_posted_note"])}</div>'+nt
@@ -819,7 +831,7 @@ for p in sorted(posts,key=lambda p:(_pday(p),ptm(p),p.get('created_ms',0))):
     P.append(
         f'<div class="r pc" style="background:#16202a;border-radius:14px;padding:14px;margin:12px 0;border:0" '
         f'data-id="{E(p["id"])}" data-t="{E(p["text"].strip())}" data-img="{E(absimg)}" '
-        f'data-ans="{E(ans_text)}" data-posted="{posted}" data-day="{E(_pday(p))}" data-slot="{ptm(p)}" data-title="{E(p["title"])}" data-ptime="{E(p.get("post_time") or "")}">'
+        f'data-ans="{E(ans_text)}" data-posted="{posted}" data-day="{E(_pday(p))}" data-sday="{E(datetime.date.fromisoformat(_pday(p)).strftime('%a %b %-d'))}" data-slot="{ptm(p)}" data-title="{E(p["title"])}" data-ptime="{E(p.get("post_time") or "")}">'
         f'<div style="display:flex;justify-content:space-between;align-items:center;font-weight:600;font-size:17px"><span class="tt">{E(p["title"])}</span>{pt}</div>'
         f'{im}<div class="d">{E(p["text"])}</div>{nt}{ans_block}'
         f'<div class="btn-row">'
@@ -830,6 +842,7 @@ for p in sorted(posts,key=lambda p:(_pday(p),ptm(p),p.get('created_ms',0))):
         f'<button type="button" class="btn btn-sec" style="width:100%;margin-top:4px" onclick="approvePost(this)">📋 Copy APPROVE (for approver1)</button>'
         f'<div class="q pok"></div></div>'
     )
+if _later_open: P.append('</div></details>')
 if not posts: P.append('<div class="q">new post ideas get added every morning</div>')
 if posted_live:
     _pl=sorted(posted_live,key=lambda p:p.get('posted_at') or '',reverse=True)
