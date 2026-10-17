@@ -295,7 +295,7 @@ function syncId(id){
   var nodes=document.querySelectorAll('.bi[data-id="'+id+'"], .ri[data-id="'+id+'"], .oi[data-id="'+id+'"], .pc[data-id="'+id+'"]');
   for(var i=0;i<nodes.length;i++)reconcileItem(nodes[i]);
   document.querySelectorAll(".batch").forEach(updProg);
-  document.querySelectorAll("#t2 details").forEach(updThread);
+  document.querySelectorAll("#t2sec details").forEach(updThread);
   updHistEmpty();
 }
 function resyncAll(){
@@ -303,7 +303,7 @@ function resyncAll(){
   var nodes=document.querySelectorAll(".bi,.ri,.oi,.pc");
   for(var i=0;i<nodes.length;i++)reconcileItem(nodes[i]);
   document.querySelectorAll(".batch").forEach(updProg);
-  document.querySelectorAll("#t2 details").forEach(updThread);
+  document.querySelectorAll("#t2sec details").forEach(updThread);
   updHistEmpty();
   var L=getLast();
   if(L&&L.id){var el=findItem(L.id);if(!el||el.classList.contains("hist")){clearHere();showJump()}}
@@ -359,9 +359,9 @@ function findById(sel,id){var nodes=document.querySelectorAll(sel);for(var i=0;i
 function findItem(id){if(!id)return null;return findById(".bi",id)||findById(".pc",id)||findById(".oi",id)||findById(".ri",id)||findById(".hc",id)}
 function clearHere(){document.querySelectorAll(".here").forEach(function(e){e.classList.remove("here");var t=e.querySelector(".here-tag");if(t)t.parentNode.removeChild(t)})}
 function applyHere(el){clearHere();if(!el)return;el.classList.add("here");if(!el.querySelector(".here-tag")){var tag=document.createElement("div");tag.className="here-tag";tag.textContent="📍 you were here";el.insertBefore(tag,el.firstChild)}}
-function itemTab(el){var pane=el&&el.closest("#t1,#t2,#t3,#t4");return pane?+pane.id.slice(1):+(localStorage.tabv2||3)}
+function itemTab(el){var pane=el&&el.closest("#t1,#t3,#t4");return pane?+pane.id.slice(1):+(localStorage.tabv2||3)}
 function rememberFrom(el){if(!el)return;var item=el.closest?el.closest(".bi,.pc,.oi,.ri,.hc"):null;if(!item&&el.classList)item=el;if(!item||!item.dataset||!item.dataset.id)return;var tabn=itemTab(item);setLast(item.dataset.id,tabn);applyHere(item)}
-function jumpToLast(){var L=getLast();if(!L||!L.id)return;var el=findItem(L.id);if(!el){showJump();return}var tabn=L.tab||itemTab(el);if(typeof tab==="function")tab(tabn);var d=el.closest("details");while(d){d.open=true;var p=d.parentElement;d=p?p.closest("details"):null}applyHere(el);setTimeout(function(){try{el.scrollIntoView({behavior:"smooth",block:"center"})}catch(e){try{el.scrollIntoView(true)}catch(x){}}},60);showJump()}
+function jumpToLast(){var L=getLast();if(!L||!L.id)return;var el=findItem(L.id);if(!el){showJump();return}var tabn=L.tab||itemTab(el);if(typeof tab==="function")tab(tabn);var d=el.closest("details");while(d){d.open=true;var p=d.parentElement;d=p?p.closest("details"):null}applyHere(el);setTimeout(function(){var cbx=el.querySelector(".confirm-bar");if(cbx){try{cbx.scrollIntoView({block:"center"});return}catch(e){}}try{el.scrollIntoView({behavior:"smooth",block:"center"})}catch(e){try{el.scrollIntoView(true)}catch(x){}}},60);showJump()}
 function showJump(){var btn=document.getElementById("jumpLast");if(!btn)return;var L=getLast();btn.style.display=(L&&L.id&&findItem(L.id))?"":"none"}
 
 
@@ -452,13 +452,13 @@ document.addEventListener("click",function(e){
   if(t.closest("#jumpLast")||t.closest(".tabs")||t.closest(".ctl")||t.closest("#newDataPill"))return;
   var back=t.closest("[data-back]");if(back){e.preventDefault();moveBack(back.getAttribute("data-back"));return}
   var yn=t.closest(".confirm-bar [data-yn]");
-  if(yn){e.preventDefault();var el=yn.closest(".bi,.ri,.oi,.pc");if(!el)return;var yes=yn.getAttribute("data-yn")==="1";var pend=itemPending(el);
+  if(yn){e.preventDefault();e.stopPropagation();var cbar=yn.closest(".confirm-bar");var el=yn.closest(".bi,.ri,.oi,.pc");if(!el&&cbar&&cbar.getAttribute("data-for")){var fid=cbar.getAttribute("data-for");el=document.querySelector('.pc[data-id="'+fid+'"]')||document.querySelector('.oi[data-id="'+fid+'"],.bi[data-id="'+fid+'"],.ri[data-id="'+fid+'"]')}if(!el){console.warn("confirm: no item for bar");return}var yes=yn.getAttribute("data-yn")==="1";var pend=itemPending(el);
     if(yes){if(pend&&pend.kind==="reply"){confirmReply(el);setRepliedLocal(el.dataset.id,true);setDone(el.classList.contains("oi")?"o":"r",el.dataset.id,true);setBack(el.dataset.id,false)}
       else if(pend&&pend.kind==="post"){setDone("p",el.dataset.id,true)}
       else if(pend&&pend.kind==="answer"){setAnswered(el.dataset.id,true)}
       setPending(el.dataset.id,null)}
     else{setPending(el.dataset.id,null)}
-    rememberFrom(el);syncId(el.dataset.id);return}
+    rememberFrom(el);syncId(el.dataset.id);if(typeof paintNow==="function"){var nb=document.getElementById("nowBar");if(nb)nb.dataset.k="";paintNow()}return}
   var und=t.closest("a.undolink");
   if(und){e.preventDefault();var el=und.closest(".bi,.ri,.oi,.pc");if(!el)return;var u=und.getAttribute("data-u");var id=el.dataset.id;
     if(u==="like")setLiked(id,false);
@@ -533,22 +533,23 @@ var dn=g("xdash_done"),po=g("xdash_posted"),an=g("xdash_answered"),pe=g("xdash_p
 s("xdash_done",dn);s("xdash_posted",po);s("xdash_answered",an);s("xdash_pending",pe);s("xdash_back",bk);localStorage.setItem("xdash_reset_v",R.v)}catch(e){}})();</script>"""
 NOWJS=r"""<script>
 function ctNowMin(){var p=ctParts();return {day:p.year+"-"+p.month+"-"+p.day,m:(+p.hour%24)*60+(+p.minute)}}
-function paintNow(){var bar=document.getElementById("nowBar");if(!bar)return;var tb=document.querySelector(".tabs");if(tb)bar.style.top=(tb.offsetHeight+4)+"px";var n=ctNowMin(),due=null,next=null;
+function paintNow(){var bar=document.getElementById("nowBar");if(!bar)return;var n=ctNowMin(),due=null,next=null;
  document.querySelectorAll(".pc").forEach(function(c){if(c.dataset.day!==n.day||postIsDone(c))return;var pend=itemPending(c);var sl=+c.dataset.slot;if(isNaN(sl)||sl>=9999)return;
   if(sl<=n.m){if(!due)due=c}else if(!next)next=c});
  var key=due?("d"+due.dataset.id+(itemPending(due)?"p":"")):next?("n"+next.dataset.id):"x";if(bar.dataset.k===key)return;bar.dataset.k=key;
  if(due){var img=due.querySelector("img"),pa=due.querySelector("a.postbtn");var href=pa?(pa.getAttribute("data-href")||pa.getAttribute("href")):"#";var pend=itemPending(due);
   bar.className="nowbar";bar.style.display="";bar.innerHTML="";
-  var h=document.createElement("div");h.className="nowh";h.textContent="📌 post this now · "+due.dataset.title+" (slot "+due.dataset.ptime+")";bar.appendChild(h);
+  var h=document.createElement("div");h.className="nowh";h.textContent="📣 post this now: "+due.dataset.title+" (slot "+due.dataset.ptime+")";bar.appendChild(h);
   if(img){var im=document.createElement("img");im.src=img.src;im.className="nowimg";bar.appendChild(im);var sv=document.createElement("a");sv.href=img.src;sv.download=(due.dataset.img||"image.jpg").split("/").pop();sv.target="_blank";sv.rel="noopener";sv.className="q";sv.textContent="🖼 Save image";bar.appendChild(sv)}
   var d=document.createElement("div");d.className="d";d.textContent=due.dataset.t||"";bar.appendChild(d);
   var row=document.createElement("div");row.className="btn-row";
-  if(pend&&pend.kind==="post"){var w=document.createElement("div");w.className="q";w.textContent="⏳ waiting for you to confirm it posted. scroll to the card below and tap yes or no";row.appendChild(w)}
+  if(pend&&pend.kind==="post"){var cb=document.createElement("div");cb.className="confirm-bar nowconfirm";cb.setAttribute("data-for",due.dataset.id);cb.innerHTML='did it post? <button type="button" class="cy" data-yn="1">✅ yes</button> <button type="button" class="cn" data-yn="0">❌ no</button>';bar.appendChild(cb)}
   else{var a=document.createElement("a");a.className="btn nowpost";a.target="_blank";a.rel="noopener";a.href=href;a.textContent="📤 Post now";a.setAttribute("data-for",due.dataset.id);row.appendChild(a)}
   var j=document.createElement("button");j.type="button";j.className="btn btn-sec";j.textContent="↓ show card";j.onclick=function(){applyHere(due);due.scrollIntoView({block:"center"})};row.appendChild(j);bar.appendChild(row);
  }else if(next){bar.className="nowbar nownext";bar.style.display="";bar.textContent="⏭ next post: "+next.dataset.title+" at "+next.dataset.ptime}
  else{bar.style.display="none"}}
-document.addEventListener("click",function(e){var a=e.target&&e.target.closest&&e.target.closest("a.nowpost");if(!a)return;var c=document.querySelector('.pc[data-id="'+a.getAttribute("data-for")+'"]');if(c){var pb=c.querySelector("a.postbtn");if(pb)onPostTap(pb);else{setPending(c.dataset.id,"post");rememberFrom(c);syncId(c.dataset.id)}}setTimeout(paintNow,50)},true);
+document.addEventListener("click",function(e){var a=e.target&&e.target.closest&&e.target.closest("a.nowpost");if(!a)return;var c=document.querySelector('.pc[data-id="'+a.getAttribute("data-for")+'"]');if(c){var pb=c.querySelector("a.postbtn");if(pb)onPostTap(pb);else{setPending(c.dataset.id,"post");rememberFrom(c);syncId(c.dataset.id)}}bar_reset();setTimeout(paintNow,50)},true);
+function bar_reset(){var nb=document.getElementById("nowBar");if(nb)nb.dataset.k=""}
 paintNow();setInterval(paintNow,2000);
 </script>"""
 opps=[o for o in d.get('opportunities',[]) if not o.get('skip') and (o.get('author') or '').lower() not in FARM]
@@ -580,7 +581,7 @@ CSS_EXTRA = (
 ".btn-done{background:#2f3336!important;color:#8b98a5!important;opacity:.55;pointer-events:none;cursor:default}"
 ".btn-pend{background:#ffad1f!important;color:#0f1419!important;pointer-events:none;cursor:default}"
 ".confirm-bar{background:rgba(255,173,31,.15);border:1px solid #ffad1f;border-radius:10px;padding:8px 10px;margin:8px 0;font-size:14px;color:#e7e9ea}"
-".confirm-bar button{background:#16202a;color:#e7e9ea;border:1px solid #2f3336;border-radius:99px;padding:6px 12px;margin-left:6px;font-size:14px;font-weight:600}"
+".confirm-bar{scroll-margin-top:180px;scroll-margin-bottom:40px}.confirm-bar button{touch-action:manipulation;min-height:40px;background:#16202a;color:#e7e9ea;border:1px solid #2f3336;border-radius:99px;padding:6px 12px;margin-left:6px;font-size:14px;font-weight:600}"
 ".confirm-bar .cy{background:#00ba7c;border-color:#00ba7c;color:#fff}"
 ".undo-row{margin-top:4px}.undolink{color:#8b98a5;font-size:12px;text-decoration:underline}"
 ".here{border-left:4px solid #ffd400!important;background:rgba(255,212,0,.14)!important;box-shadow:inset 4px 0 0 #ffd400}"
@@ -592,11 +593,11 @@ CSS_EXTRA = (
 ".pace-day.pace-soft{border-color:#ffad1f;color:#ffad1f}.pace-day.pace-hard{border-color:#f4212e;color:#f4212e}"
 "#paceWarn{background:rgba(244,33,46,.12);border:1px solid #f4212e;color:#f4212e;border-radius:10px;padding:8px 12px;margin:8px 0;font-size:14px;display:none}"
 ".btn-cool{background:#2f3336!important;color:#8b98a5!important;opacity:.6;pointer-events:none}"
-".slab{color:#e7e9ea;font-weight:600}.asof{color:#5c6670;font-size:12px}"
+".d{white-space:pre-line}.slab{color:#e7e9ea;font-weight:600}.asof{color:#5c6670;font-size:12px}"
 ".dupflag{color:#ffad1f;font-size:12px;font-weight:600}"
 ".tipline{color:#8b98a5;font-size:13px;margin:6px 0 10px}"
 ".hc{background:#16202a;border-radius:14px;padding:12px;margin:10px 0;border:0}"
-"#nowBar{position:sticky;top:56px;z-index:4;background:#1a1f12;border:2px solid #ffd400;border-radius:14px;padding:10px 12px;margin:10px 0;max-height:48vh;overflow:auto;box-shadow:0 6px 18px rgba(0,0,0,.5)}"
+"#nowBar{position:static;background:#1a1f12;border:2px solid #ffd400;border-radius:14px;padding:10px 12px;margin:10px 0;box-shadow:0 6px 18px rgba(0,0,0,.5)}"
 "#nowBar.nownext{border:1px solid #2f3336;background:#16181c;color:#8b98a5;font-size:14px;padding:8px 12px}"
 ".nowh{font-weight:700;font-size:16px;color:#ffd400;margin-bottom:6px}.nowimg{width:100%;max-height:22vh;object-fit:contain;border-radius:10px;background:#fff;margin:6px 0}"
 ".ntag{font-size:12px;color:#8b98a5}.revnote{color:#ffad1f;margin:4px 0 8px}"
@@ -657,7 +658,7 @@ for o in opps:
     )
 if not opps: out.append('<div class="q">Nothing new right now. The next scan runs within the hour, or tap Scan now.</div>')
 
-out.append('</div><div id="t2" style="display:none"><div class="cd" id="cd2">⏱️ …</div>')
+out.append('<div id="t2sec" style="margin-top:26px;border-top:2px solid #2f3336;padding-top:8px"><h2 style="font-size:18px;margin:14px 0 4px">💬 People replying to your comments <span class="b">'+str(nrep)+'</span></h2><div class="cd" id="cd2">⏱️ …</div>')
 allr=[dict(r,thread=s['title'],my_comment=s.get('my_comment','')) for s in secs for r in s['replies']]
 allr.sort(key=lambda r:-(r.get('views') or 0))
 bs=[allr[i:i+8] for i in range(0,len(allr),8)]
@@ -726,10 +727,10 @@ def ptm(p):
     if not m: return 9999
     h=int(m.group(1))%12+(12 if m.group(3).lower()=='p' else 0); return h*60+int(m.group(2) or 0)
 
-P=['</div><div id="t3" style="display:none"><h2 style="font-size:18px;margin:14px 0 4px">📝 Post to our page <span class="b'+(' z' if not posts else '')+f'">{len(posts)}</span></h2><div class="cd">original posts count toward monetization, replies don\'t. today\'s slots are spaced 1 to 2 hours apart.</div><div class="q">🖼 Save image, tap 📤 Post now, then attach the image in the composer. Intents can\'t attach images. Nothing posts from this page.</div>']
+P=['</div></div><div id="t3" style="display:none"><h2 style="font-size:18px;margin:14px 0 4px">📝 Post to our page <span class="b'+(' z' if not posts else '')+f'">{len(posts)}</span></h2><div class="cd">original posts count toward monetization, replies don\'t. today\'s slots are spaced 1 to 2 hours apart.</div><div class="q">🖼 Save image, tap 📤 Post now, then attach the image in the composer. Intents can\'t attach images. Nothing posts from this page.</div>']
 _today=datetime.datetime.now(zoneinfo.ZoneInfo('America/Chicago')).strftime('%Y-%m-%d')
 def _pday(p): return p.get('slot_date') or _today
-P.append('<div id="nowBar" style="display:none"></div><div class="q revnote">⚠️ if X shows "Under review" on your checkmark, posts can sit in review for a while. wait and check your profile before posting again so you don\'t make duplicates.</div>')
+P.append('<div id="nowBar" style="display:none"></div><div class="q revnote">⚠️ if X shows Under review, your checkmark is probably being re-verified after the avatar change. wait it out, don\'t repost</div>')
 for p in sorted(posts,key=lambda p:(_pday(p),ptm(p),p.get('created_ms',0))):
     link='https://x.com/intent/post?text='+u.quote(p['text'].strip(),safe='')
     img=p.get('image'); absimg=('/workspace/x-dashboard/'+img) if img else 'none'
@@ -788,7 +789,7 @@ out.append(MAN)
 out.append(NOWJS)
 out.append(
  '</div><button type="button" id="jumpLast" onclick="jumpToLast()">📍 Jump to where I left off</button>'
- '<script>function tab(n){for(const i of [1,2,3,4]){var t=document.getElementById("t"+i),b=document.getElementById("b"+i);if(t)t.style.display=i==n?"":"none";if(b)b.className=i==n?"on":""}localStorage.tabv2=n}'
+ '<script>function tab(n){var sec=(n==2);if(sec)n=1;for(const i of [1,2,3,4]){var t=document.getElementById("t"+i),b=document.getElementById("b"+i);if(t)t.style.display=i==n?"":"none";if(b)b.className=i==n?"on":""}var b2=document.getElementById("b2");if(b2)b2.className=sec?"on":"";if(sec){var b1=document.getElementById("b1");if(b1)b1.className="";var ts=document.getElementById("t2sec");if(ts)setTimeout(function(){ts.scrollIntoView({block:"start"})},30)}localStorage.tabv2=n}'
  'var _L=typeof getLast==="function"?getLast():null;'
  'if(_L&&_L.id&&typeof findItem==="function"&&findItem(_L.id)){jumpToLast()}'
  'else{tab(+(localStorage.tabv2||3));if(typeof showJump==="function")showJump()}'
