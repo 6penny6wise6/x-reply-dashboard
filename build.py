@@ -245,6 +245,7 @@ function paintActionButtons(el){
   // mark-done checkbox = fully done
   var cb=el.querySelector(".mdone");
   if(cb)cb.checked=itemFullyDone(el);
+  var alk=el.querySelector("a.alreadyliked");if(alk)alk.style.display=itemLiked(el)?"none":"";
   paintChips(el);
   ensureConfirm(el);
   ensureUndo(el,kind);
@@ -306,6 +307,7 @@ function syncId(id){
   document.querySelectorAll(".batch").forEach(updProg);
   document.querySelectorAll("#t2sec details").forEach(updThread);
   updHistEmpty();
+  if(typeof paintLikeAll==="function")paintLikeAll();
 }
 function resyncAll(){
   paintPace();
@@ -314,6 +316,7 @@ function resyncAll(){
   document.querySelectorAll(".batch").forEach(updProg);
   document.querySelectorAll("#t2sec details").forEach(updThread);
   updHistEmpty();
+  paintLikeAll();
   var L=getLast();
   if(L&&L.id){var el=findItem(L.id);if(!el||el.classList.contains("hist")){clearHere();showJump()}}
   else showJump();
@@ -456,6 +459,39 @@ function onReplyTapPaced(a){
 function later(fn){setTimeout(fn,350)}
 function onLikeTap(a){var el=a.closest(".bi,.ri,.oi");if(!el)return;setLiked(el.dataset.id,true);setBack(el.dataset.id,false);later(function(){rememberFrom(el);syncId(el.dataset.id)})}
 function onReplyTap(a){onReplyTapPaced(a)}
+/* already-liked helpers: phone-side like state only (X hides likes from free reads) */
+function laItems(scope){return [].slice.call(scope.querySelectorAll(".bi,.ri,.oi")).filter(function(e){return !e.classList.contains("hist")})}
+function laUndoGet(){return _lsGet("xdash_likeall_undo",{})}
+function laUndoSet(k,ids){var m=laUndoGet();if(ids&&ids.length)m[k]={ids:ids,at:Date.now()};else delete m[k];_lsSet("xdash_likeall_undo",m)}
+function paintLikeAll(){
+  document.querySelectorAll(".likeall-bar").forEach(function(bar){
+    var scope=bar.closest(".likeall-scope");if(!scope)return;
+    var k=bar.getAttribute("data-k"),btn=bar.querySelector("button.likeall"),msg=bar.querySelector(".likeall-msg");
+    var left=laItems(scope).filter(function(e){return !itemLiked(e)}).length;
+    if(btn){if(left){btn.disabled=false;btn.textContent=btn.getAttribute("data-label")+" ("+left+")";btn.className="btn likeall"}else{btn.disabled=true;btn.textContent="❤️ all marked liked ✓";btn.className="btn likeall btn-done"}}
+    var u=laUndoGet()[k];
+    if(u&&Date.now()-u.at>86400000){laUndoSet(k,null);u=null}
+    if(msg)msg.innerHTML=u?'❤️ marked '+u.ids.length+' as liked · <a href="#" class="likeall-undo" data-k="'+esc(k)+'">undo</a>':"";
+  });
+  var g=document.getElementById("laGlobal");if(g){var m=laUndoGet(),best=null,bk="";for(var k in m){if(Date.now()-m[k].at>86400000)continue;if(!best||m[k].at>best.at){best=m[k];bk=k}}
+    if(best){g.style.display="";g.innerHTML='❤️ last "already liked all": '+best.ids.length+' marked liked · <a href="#" class="likeall-undo" data-k="'+esc(bk)+'">undo</a> · <a href="#" class="likeall-x" data-k="'+esc(bk)+'">hide</a>'}else{g.style.display="none";g.innerHTML=""}}
+}
+function likeAllIn(bar){
+  var scope=bar.closest(".likeall-scope");if(!scope)return;
+  var ids=[];laItems(scope).forEach(function(e){var id=e.dataset.id;if(!itemLiked(e)&&ids.indexOf(id)<0)ids.push(id)});
+  if(!ids.length){paintLikeAll();return}
+  ids.forEach(function(id){setLiked(id,true);setBack(id,false)});
+  laUndoSet(bar.getAttribute("data-k"),ids);
+  ids.forEach(syncId);paintLikeAll();
+}
+function undoLikeAll(k){
+  var u=laUndoGet()[k];if(!u)return;
+  var list=histList();
+  u.ids.forEach(function(id){setLiked(id,false);if(list){var hc=list.querySelector('.hc[data-id="'+id+'"]');if(hc&&!hc.getAttribute("data-server"))hc.parentNode.removeChild(hc)}});
+  laUndoSet(k,null);
+  u.ids.forEach(syncId);paintLikeAll();
+}
+function markAlreadyLiked(a){var el=a.closest(".bi,.ri,.oi");if(!el)return;setLiked(el.dataset.id,true);setBack(el.dataset.id,false);rememberFrom(el);syncId(el.dataset.id);paintLikeAll()}
 function onPostTap(a){var el=a.closest(".pc");if(!el)return;if(postIsDone(el))return;setPending(el.dataset.id,"post");later(function(){rememberFrom(el);syncId(el.dataset.id)})}
 function onAnsTap(a){var el=a.closest(".pc");if(!el)return;if(answerIsDone(el))return;setPending(el.dataset.id,"answer");later(function(){rememberFrom(el);syncId(el.dataset.id)})}
 
@@ -479,6 +515,10 @@ document.addEventListener("click",function(e){
     if(u==="ans")setAnswered(id,false);
     if(u==="full"){setLiked(id,false);setRepliedLocal(id,false);setDone("r",id,false);setDone("o",id,false);setDone("p",id,false);setAnswered(id,false);setPending(id,null);setBack(id,true)}
     rememberFrom(el);syncId(id);return}
+  var lb=t.closest(".likeall-bar button.likeall");if(lb){e.preventDefault();if(!lb.disabled)likeAllIn(lb.closest(".likeall-bar"));return}
+  var lu=t.closest("a.likeall-undo");if(lu){e.preventDefault();undoLikeAll(lu.getAttribute("data-k"));return}
+  var lx=t.closest("a.likeall-x");if(lx){e.preventDefault();laUndoSet(lx.getAttribute("data-k"),null);paintLikeAll();return}
+  var alk=t.closest("a.alreadyliked");if(alk){e.preventDefault();markAlreadyLiked(alk);return}
   var like=t.closest("a.likebtn");if(like&&!like.getAttribute("aria-disabled"))onLikeTap(like);
   var reply=t.closest("a.replybtn");
   if(reply&&!reply.getAttribute("aria-disabled")){
@@ -595,6 +635,8 @@ CSS_EXTRA = (
 ".confirm-bar{background:rgba(255,173,31,.15);border:1px solid #ffad1f;border-radius:10px;padding:8px 10px;margin:8px 0;font-size:14px;color:#e7e9ea}"
 ".confirm-bar{scroll-margin-top:180px;scroll-margin-bottom:40px}.confirm-bar button{touch-action:manipulation;min-height:40px;background:#16202a;color:#e7e9ea;border:1px solid #2f3336;border-radius:99px;padding:6px 12px;margin-left:6px;font-size:14px;font-weight:600}"
 ".confirm-bar .cy{background:#00ba7c;border-color:#00ba7c;color:#fff}"
+".likeall-bar{margin:8px 0 4px}.likeall{width:100%;background:#2f3336;color:#f91880;border:1px solid #f91880;font-size:15px;padding:10px;touch-action:manipulation}.likeall-msg{margin-top:4px;font-size:13px}.likeall-msg a{color:#8b98a5;text-decoration:underline}"
+".alreadyliked{color:#f91880;font-size:13px;text-decoration:underline;touch-action:manipulation}"
 ".undo-row{margin-top:4px}.undolink{color:#8b98a5;font-size:12px;text-decoration:underline}"
 ".here{border-left:4px solid #ffd400!important;background:rgba(255,212,0,.14)!important;box-shadow:inset 4px 0 0 #ffd400}"
 ".here-tag{display:inline-block;background:#ffd400;color:#0f1419;font-size:12px;font-weight:700;border-radius:99px;padding:2px 8px;margin:0 0 8px}"
@@ -637,7 +679,7 @@ summary{{list-style:none;padding:14px;cursor:pointer}}summary::-webkit-details-m
 .tabs{{display:flex;gap:6px;margin:12px 0;position:sticky;top:0;background:#0f1419;padding:6px 0;z-index:5;flex-wrap:wrap}}.tabs button{{flex:1;min-width:40%;background:#16202a;color:#e7e9ea;border:0;border-radius:12px;padding:10px 8px;font-size:13px;font-weight:600}}.tabs button.on{{background:#1d9bf0}}.ctl{{margin:8px 0}}.ctl button{{background:#2f3336;color:#e7e9ea;border:0;border-radius:99px;padding:6px 12px;margin-right:6px}}
 ''' + CSS_EXTRA + f'''</style></head><body>
 <h1>Reply Dashboard <span class="b">{total} to reply</span></h1><div class="q">🔎 Last scanned X: <b>{E(d.get('last_scanned') or now)}</b> · page built {now}</div><button onclick="location.href=location.pathname+'?r='+Date.now()" style="width:100%;margin:10px 0 0;background:#00ba7c;color:#fff;border:0;border-radius:99px;padding:10px;font-size:16px;font-weight:600">🔄 Refresh</button>
-<div class="ctl"><button onclick="document.querySelectorAll('details').forEach(x=>x.open=true)">Expand all</button><button onclick="document.querySelectorAll('details').forEach(x=>x.open=false)">Collapse all</button></div><div class="pace-day" id="paceDay">replies today: …</div><div id="paceWarn"></div><div id="paceBar"></div><div class="tipline">💡 one top-level reply per post, no copy-paste answers. viral replies 10–15 min apart, thread replies 3–5 min. timers start once a reply is confirmed.</div>''']
+<div class="ctl"><button onclick="document.querySelectorAll('details').forEach(x=>x.open=true)">Expand all</button><button onclick="document.querySelectorAll('details').forEach(x=>x.open=false)">Collapse all</button></div><div class="pace-day" id="paceDay">replies today: …</div><div id="paceWarn"></div><div id="paceBar"></div><div class="tipline">💡 one top-level reply per post, no copy-paste answers. viral replies 10–15 min apart, thread replies 3–5 min. timers start once a reply is confirmed.</div><div id="laGlobal" class="likeall-msg q" style="display:none"></div>''']
 
 out.append(
  f'<div class="tabs">'
@@ -650,6 +692,7 @@ out.append(
  f'<div class="cd" id="scanst">Scan status: checking…</div>'
 )
 out.append(f'<h2 style="font-size:18px;margin:18px 0 4px">💬 Viral posts to reply to <span class="b{" z" if not opps else ""}">{len(opps)}</span></h2><div class="q">Save the image, tap ↩️ Reply, then attach it. Mark done after you reply, and tap ❤️ Like. When both are done it moves to History.</div>')
+if opps: out.append('<div class="likeall-scope" id="oppList">'+'<div class="likeall-bar" data-k="opps"><button type="button" class="btn likeall" data-label="❤️ already liked all these viral posts">❤️ already liked all these viral posts</button><div class="likeall-msg q"></div></div>')
 for o in opps:
     st=o['stats']; link='https://x.com/intent/post?in_reply_to='+o['id']+'&text='+u.quote(o['caption'].strip(),safe='')
     llink='https://x.com/intent/like?tweet_id='+o['id']
@@ -665,9 +708,10 @@ for o in opps:
         f'<div class="d">{E(o["caption"])}</div>{"<div class=\"dupflag\">⚠️ similar opening to another draft — rewrite before posting</div>" if o["id"] in dup_ids else ""}{chips(o.get("replied"), o.get("liked"))}'
         f'<div class="btn-row"><a target="_blank" rel="noopener" class="btn replybtn" href="{link}" data-href="{link}">↩️ Post reply</a>'
         f'<a target="_blank" rel="noopener" class="btn likebtn" style="flex:0 0 32%;background:#f91880" href="{llink}" data-href="{llink}">❤️ Like</a></div>'
-        f'<div class="mdrow"><label><input type="checkbox" class="mdone" onchange="markDone(this,\'o\')"> Mark done</label></div>'
+        f'<div class="mdrow"><label><input type="checkbox" class="mdone" onchange="markDone(this,\'o\')"> Mark done</label><a href="#" class="alreadyliked">❤️ already liked (skip X)</a></div>'
         f'</div></details>'
     )
+if opps: out.append('</div>')
 if not opps: out.append('<div class="q">Nothing new right now. The next scan runs within the hour, or tap Scan now.</div>')
 
 out.append('<div id="t2sec" style="margin-top:26px;border-top:2px solid #2f3336;padding-top:8px"><h2 style="font-size:18px;margin:14px 0 4px">💬 People replying to your comments <span class="b">'+str(nrep)+'</span></h2><div class="cd" id="cd2">⏱️ …</div>')
@@ -677,7 +721,7 @@ bs=[allr[i:i+8] for i in range(0,len(allr),8)]
 if bs:
     out.append('<h2 style="font-size:17px;margin:14px 0 6px">↩️ Manual posting (phone)</h2><div class="q">Tap ↩️ Post reply or ❤️ Like, or check Mark done to finish an item in one tap (locks both + moves to History). After Post reply without Mark done, confirm when you come back. Batch 1 is top-viewed.</div>')
 for bi,b in enumerate(bs,1):
-    out.append(f'<details class="batch"{" open" if bi==1 else ""}><summary><div class="t"><span class="tt">Batch {bi} of {len(bs)}</span><span class="prog" id="prog{bi}">0 of {len(b)} fully done</span><span class="b bcount">{len(b)}</span></div></summary><div class="in" id="batch{bi}">')
+    out.append(f'<details class="batch"{" open" if bi==1 else ""}><summary><div class="t"><span class="tt">Batch {bi} of {len(bs)}</span><span class="prog" id="prog{bi}">0 of {len(b)} fully done</span><span class="b bcount">{len(b)}</span></div></summary><div class="in likeall-scope" id="batch{bi}">'+f'<div class="likeall-bar" data-k="b{bi}"><button type="button" class="btn likeall" data-label="❤️ already liked all in this batch">❤️ already liked all in this batch</button><div class="likeall-msg q"></div></div>')
     for r in b:
         rlink='https://x.com/intent/post?in_reply_to='+r['id']+'&text='+u.quote(r['draft'].strip(),safe='')
         llink='https://x.com/intent/like?tweet_id='+r['id']
@@ -693,7 +737,7 @@ for bi,b in enumerate(bs,1):
             f'<a target="_blank" rel="noopener" class="btn replybtn" href="{rlink}" data-href="{rlink}">↩️ Post reply</a>'
             f'<a target="_blank" rel="noopener" class="btn likebtn" style="flex:0 0 32%;background:#f91880" href="{llink}" data-href="{llink}">❤️ Like</a>'
             f'</div>'
-            f'<div class="mdrow"><label><input type="checkbox" class="mdone" onchange="markDone(this,\'r\')"> Mark done</label>'
+            f'<div class="mdrow"><label><input type="checkbox" class="mdone" onchange="markDone(this,\'r\')"> Mark done</label><a href="#" class="alreadyliked">❤️ already liked (skip X)</a>'
             f'<label><input type="checkbox" class="drop" onchange="this.closest(\'.bi\').style.opacity=this.checked?.35:\'\'"> Drop from Approve</label></div>'
             f'</div>'
         )
@@ -715,7 +759,7 @@ for s in secs:
     olab=(f"parent comment (@{E(oh)})" if s.get('original_is_reply') else "original post")
     sl+=statline(olab,s.get('original_stats'),s.get('original_stats_at'))
     olink=f' · <a target="_blank" rel="noopener" href="https://x.com/{E(oh)}/status/{E(oid)}">Open {"parent comment" if s.get("original_is_reply") else "original post"} ↗</a>' if oid else ''
-    out.append(f'<details><summary><div class="t"><span class="tt">{E(s["title"])}</span><span class="b bcount">{n}</span></div>{sl}</summary><div class="in"><div class="q"><a target="_blank" rel="noopener" href="{s["my_comment"]}">Open my comment ↗</a>{olink}</div>')
+    out.append(f'<details><summary><div class="t"><span class="tt">{E(s["title"])}</span><span class="b bcount">{n}</span></div>{sl}</summary><div class="in likeall-scope"><div class="q"><a target="_blank" rel="noopener" href="{s["my_comment"]}">Open my comment ↗</a>{olink}</div>'+f'<div class="likeall-bar" data-k="t{E(str(s.get("my_comment") or s["title"]).rstrip("/").split("/")[-1])}"><button type="button" class="btn likeall" data-label="❤️ already liked all in this thread">❤️ already liked all in this thread</button><div class="likeall-msg q"></div></div>')
     for r in s['replies']:
         link='https://x.com/intent/post?in_reply_to='+r['id']+'&text='+u.quote(r['draft'].strip(),safe='')
         llink='https://x.com/intent/like?tweet_id='+r['id']
@@ -727,7 +771,7 @@ for s in secs:
             f'<div class="d">{E(r["draft"])}</div>{"<div class=\"dupflag\">⚠️ similar opening to another draft — rewrite before posting</div>" if r["id"] in dup_ids else ""}{chips(r.get("replied"), r.get("liked"))}'
             f'<div class="btn-row"><a target="_blank" rel="noopener" class="btn likebtn" style="flex:0 0 32%;background:#f91880" href="{llink}" data-href="{llink}">❤️ Like</a>'
             f'<a target="_blank" rel="noopener" class="btn replybtn" href="{link}" data-href="{link}">↩️ Post reply</a></div>'
-            f'<div class="mdrow"><label><input type="checkbox" class="mdone" onchange="markDone(this,\'r\')"> Mark done</label></div></div>'
+            f'<div class="mdrow"><label><input type="checkbox" class="mdone" onchange="markDone(this,\'r\')"> Mark done</label><a href="#" class="alreadyliked">❤️ already liked (skip X)</a></div></div>'
         )
     out.append('</div></details>')
 
