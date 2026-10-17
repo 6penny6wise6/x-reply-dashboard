@@ -70,65 +70,217 @@ function tick(){var c=ct(),now=c.h*3600+c.m*60+c.s,r,q;
  document.getElementById("cd2").textContent=r+ago(BUILT);document.getElementById("cd1").textContent=q+ago(RIDDLE)}
 tick();setInterval(tick,1000);</script>'''
 
-# Manual mode + reconcile/history
+# Manual mode + live sync / pending / done buttons
 MAN=r'''<script>
 function _lsGet(k,fb){try{var v=localStorage.getItem(k);return v?JSON.parse(v):fb}catch(e){return fb}}
 function _lsSet(k,v){try{localStorage.setItem(k,JSON.stringify(v))}catch(e){}}
-function isDone(kind,id){var m=_lsGet("xdash_done",{});return !!m[kind+":"+id]}
-function setDone(kind,id,on){var m=_lsGet("xdash_done",{});if(on)m[kind+":"+id]=1;else delete m[kind+":"+id];_lsSet("xdash_done",m)}
-function getPosted(id){var m=_lsGet("xdash_posted",{});return m[id]||""}
-function setPosted(id,sid){var m=_lsGet("xdash_posted",{});if(sid)m[id]=sid;else delete m[id];_lsSet("xdash_posted",m)}
 function likedMap(){return _lsGet("xdash_liked",{})}
 function setLiked(id,on){var m=likedMap();if(on)m[id]=1;else delete m[id];_lsSet("xdash_liked",m)}
 function repliedMap(){return _lsGet("xdash_replied",{})}
 function setRepliedLocal(id,on){var m=repliedMap();if(on)m[id]=1;else delete m[id];_lsSet("xdash_replied",m)}
+function pendingMap(){return _lsGet("xdash_pending",{})}
+function setPending(id,kind){var m=pendingMap();if(kind)m[id]={kind:kind,at:Date.now()};else delete m[id];_lsSet("xdash_pending",m)}
 function backMap(){return _lsGet("xdash_back",{})}
 function setBack(id,on){var m=backMap();if(on)m[id]=1;else delete m[id];_lsSet("xdash_back",m)}
-function itemReplied(el){if(!el)return false;return el.dataset.replied==="1"||!!repliedMap()[el.dataset.id]||!!isDone("r",el.dataset.id)||!!isDone("o",el.dataset.id)}
+function doneMap(){return _lsGet("xdash_done",{})}
+function setDone(kind,id,on){var m=doneMap();var k=kind+":"+id;if(on)m[k]=1;else delete m[k];_lsSet("xdash_done",m)}
+function isDone(kind,id){return !!doneMap()[kind+":"+id]}
+function getPosted(id){var m=_lsGet("xdash_posted",{});return m[id]||""}
+function setPosted(id,sid){var m=_lsGet("xdash_posted",{});if(sid)m[id]=sid;else delete m[id];_lsSet("xdash_posted",m)}
+function answeredMap(){return _lsGet("xdash_answered",{})}
+function setAnswered(id,on){var m=answeredMap();if(on)m[id]=1;else delete m[id];_lsSet("xdash_answered",m)}
+
+function itemReplied(el){if(!el)return false;var id=el.dataset.id;return el.dataset.replied==="1"||!!repliedMap()[id]||!!isDone("r",id)||!!isDone("o",id)}
 function itemLiked(el){if(!el)return false;return el.dataset.liked==="1"||!!likedMap()[el.dataset.id]}
 function itemForcedBack(el){return !!(el&&backMap()[el.dataset.id])}
-function applyDone(el,on){if(!el)return;el.classList.toggle("done",!!on);var cb=el.querySelector(".mdone");if(cb)cb.checked=!!on}
-function paintChips(el){var box=el.querySelector(".chips");if(!box)return;var r=itemReplied(el),l=itemLiked(el);
- box.innerHTML='<span class="chip '+(r?"ok":"no")+'">'+(r?"↩️ replied ✓":"↩️ not replied")+'</span>'+
-  '<span class="chip '+(l?"ok":"no")+'">'+(l?'❤️ liked ✓ <button type="button" class="undo-like" onclick="undoLike(event)">undo</button>':"❤️ not liked")+'</span>'}
-function markDone(cb,kind){var sel=kind==="r"?".bi,.ri":kind==="o"?".oi":".pc";var el=cb.closest(sel);var id=el&&el.dataset.id;if(!id)return;
- setDone(kind,id,cb.checked);if(kind==="r"||kind==="o"){setRepliedLocal(id,cb.checked);if(cb.checked)setBack(id,false)}
- applyDone(el,cb.checked);paintChips(el);rememberFrom(el);reconcileItem(el);if(el.classList.contains("bi")){var b=el.closest(".batch");if(b)updProg(b)}}
-function undoLike(ev){ev.preventDefault();ev.stopPropagation();var el=ev.target.closest(".bi,.ri,.oi,.pc");if(!el)return;setLiked(el.dataset.id,false);paintChips(el);reconcileItem(el);rememberFrom(el)}
-function onLikeClick(a){var el=a.closest(".bi,.ri,.oi");if(!el)return;setLiked(el.dataset.id,true);setBack(el.dataset.id,false);paintChips(el);rememberFrom(el);reconcileItem(el)}
-function updProg(batch){if(!batch)return;var items=[].slice.call(batch.querySelectorAll(".bi")),act=items.filter(function(e){return !e.classList.contains("hist")});
- var done=act.filter(function(e){return itemReplied(e)&&itemLiked(e)}).length;
- var el=batch.querySelector(".prog");if(el)el.textContent=done+" of "+act.length+" fully done";
- var badge=batch.querySelector(".bcount");if(badge)badge.textContent=act.length;batch.style.display=act.length?"":"none"}
-function updThread(det){if(!det||det.classList.contains("batch")||det.classList.contains("oi"))return;var items=[].slice.call(det.querySelectorAll(".ri"));
- var act=items.filter(function(e){return !e.classList.contains("hist")});var badge=det.querySelector(".bcount");if(badge){badge.textContent=act.length?act.length:"✓";badge.classList.toggle("z",!act.length)}
- if(!act.length&&items.length)det.style.display="none"}
+function itemPending(el){if(!el)return null;return pendingMap()[el.dataset.id]||null}
+function postIsDone(el){if(!el)return false;var id=el.dataset.id;return !!isDone("p",id)||!!(el.dataset.posted)||!!getPosted(id)}
+function answerIsDone(el){if(!el)return false;return !!answeredMap()[el.dataset.id]}
+
+function muteBtn(a,label,cls){
+  if(!a)return;
+  if(!a.getAttribute("data-href")&&a.getAttribute("href"))a.setAttribute("data-href",a.getAttribute("href"));
+  a.textContent=label;
+  a.removeAttribute("href");
+  a.className="btn "+(cls||"btn-done");
+  a.setAttribute("aria-disabled","true");
+  a.onclick=function(e){if(e){e.preventDefault();e.stopPropagation()}return false};
+}
+function unmuteBtn(a,label,cls,pink){
+  if(!a)return;
+  var href=a.getAttribute("data-href");
+  if(href)a.setAttribute("href",href);
+  a.textContent=label;
+  a.className="btn "+(cls||"")+(pink?" likebtn":"");
+  if(pink)a.style.background="#f91880"; else a.style.background="";
+  a.removeAttribute("aria-disabled");
+  a.onclick=null;
+}
+function ensureUndo(el,kind){
+  var row=el.querySelector(".undo-row");
+  if(!row){row=document.createElement("div");row.className="undo-row q";el.appendChild(row)}
+  var parts=[];
+  if(kind==="reply"||kind==="opp"){
+    if(likedMap()[el.dataset.id]&&el.dataset.liked!=="1")parts.push('<a href="#" class="undolink" data-u="like">undo like</a>');
+    if(repliedMap()[el.dataset.id]&&el.dataset.replied!=="1")parts.push('<a href="#" class="undolink" data-u="reply">undo reply</a>');
+  }
+  if(kind==="post"){
+    if(isDone("p",el.dataset.id))parts.push('<a href="#" class="undolink" data-u="post">undo posted</a>');
+    if(answeredMap()[el.dataset.id])parts.push('<a href="#" class="undolink" data-u="ans">undo answer</a>');
+  }
+  row.innerHTML=parts.join(" · ");
+  row.style.display=parts.length?"":"none";
+}
+function ensureConfirm(el){
+  var pend=itemPending(el);
+  var bar=el.querySelector(".confirm-bar");
+  if(!pend){if(bar)bar.parentNode.removeChild(bar);return}
+  if(itemReplied(el)&&pend.kind==="reply"){setPending(el.dataset.id,null);if(bar)bar.parentNode.removeChild(bar);return}
+  if(postIsDone(el)&&pend.kind==="post"){setPending(el.dataset.id,null);if(bar)bar.parentNode.removeChild(bar);return}
+  if(answerIsDone(el)&&pend.kind==="answer"){setPending(el.dataset.id,null);if(bar)bar.parentNode.removeChild(bar);return}
+  if(!bar){
+    bar=document.createElement("div");
+    bar.className="confirm-bar";
+    bar.innerHTML='did it post? <button type="button" class="cy" data-yn="1">✅ yes</button> <button type="button" class="cn" data-yn="0">❌ no</button>';
+    el.appendChild(bar);
+  }
+}
+function paintChips(el){
+  var box=el.querySelector(".chips");if(!box)return;
+  var r=itemReplied(el),l=itemLiked(el),pend=itemPending(el);
+  var rs=r?"↩️ replied ✓":(pend&&pend.kind==="reply"?"⏳ confirm reply":"↩️ not replied");
+  var ls=l?"❤️ liked ✓":"❤️ not liked";
+  box.innerHTML='<span class="chip '+(r?"ok":(pend&&pend.kind==="reply"?"pend":"no"))+'">'+rs+'</span>'+
+    '<span class="chip '+(l?"ok":"no")+'">'+ls+'</span>';
+}
+function paintActionButtons(el){
+  if(!el||!el.dataset.id)return;
+  var kind=el.classList.contains("pc")?"post":(el.classList.contains("oi")?"opp":"reply");
+  var like=el.querySelector("a.likebtn, a.btn-liked, span.btn-liked");
+  var reply=el.querySelector("a.replybtn, a.btn-replied, span.btn-replied");
+  var post=el.querySelector("a.postbtn, a.btn-posted, span.btn-posted");
+  var ans=el.querySelector("a.ansbtn, a.btn-answered, span.btn-answered");
+  // normalize: if muted to span, skip; we keep as <a>
+  if(el.querySelector("a.likebtn,a.btn-liked")){
+    like=el.querySelector("a.likebtn,a.btn-liked");
+    if(itemLiked(el))muteBtn(like,"❤️ Liked ✓","btn-done btn-liked");
+    else unmuteBtn(like,"❤️ Like","",true);
+  }
+  if(el.querySelector("a.replybtn,a.btn-replied")){
+    reply=el.querySelector("a.replybtn,a.btn-replied");
+    var pend=itemPending(el);
+    if(itemReplied(el))muteBtn(reply,"↩️ Replied ✓","btn-done btn-replied");
+    else if(pend&&pend.kind==="reply")muteBtn(reply,"⏳ confirm?","btn-pend btn-replied");
+    else unmuteBtn(reply,"↩️ Post reply","replybtn",false);
+  }
+  if(el.querySelector("a.postbtn,a.btn-posted")){
+    post=el.querySelector("a.postbtn,a.btn-posted");
+    var pendp=itemPending(el);
+    if(postIsDone(el))muteBtn(post,"📤 Posted ✓","btn-done btn-posted");
+    else if(pendp&&pendp.kind==="post")muteBtn(post,"⏳ confirm?","btn-pend btn-posted");
+    else unmuteBtn(post,"📤 Post now","postbtn",false);
+  }
+  if(el.querySelector("a.ansbtn,a.btn-answered")){
+    ans=el.querySelector("a.ansbtn,a.btn-answered");
+    var penda=itemPending(el);
+    if(answerIsDone(el))muteBtn(ans,"💡 Answered ✓","btn-done btn-answered");
+    else if(penda&&penda.kind==="answer")muteBtn(ans,"⏳ confirm?","btn-pend btn-answered");
+    else{
+      var href=ans.getAttribute("data-href")||ans.getAttribute("href");
+      if(href&&href!=="#"){ans.className="btn ansbtn";ans.style.background="#7856ff";ans.textContent="💡 Post answer";ans.setAttribute("href",href);ans.removeAttribute("aria-disabled");ans.onclick=null;}
+    }
+  }
+  // mark-done checkbox
+  var cb=el.querySelector(".mdone");
+  if(cb&&(kind==="reply"||kind==="opp")){cb.checked=itemReplied(el)}
+  if(cb&&kind==="post"){cb.checked=postIsDone(el)||!!isDone("p",el.dataset.id)}
+  paintChips(el);
+  ensureConfirm(el);
+  ensureUndo(el,kind);
+}
+function applyDone(el,on){if(!el)return;el.classList.toggle("done",!!on)}
+
 function histList(){return document.getElementById("histList")}
-function ensureHistCard(el){var id=el.dataset.id,list=histList();if(!list)return null;var existing=list.querySelector('.hc[data-id="'+id+'"]');if(existing)return existing;
- var h=document.createElement("div");h.className="r hc";h.dataset.id=id;
- var handle=el.dataset.h||"";var draft=(el.dataset.d||el.querySelector(".d")&&el.querySelector(".d").textContent||"").trim();
- var url=el.dataset.url||("#");
- h.innerHTML='<div class="q">'+(el.dataset.thread||"")+' · @'+handle+'</div><div class="d">'+draft.replace(/[<>&]/g,function(c){return({"<":"&lt;",">":"&gt;","&":"&amp;"}[c])})+'</div>'+
-  '<div class="btn-row"><a target="_blank" rel="noopener" class="btn btn-sec" href="'+url+'">Open comment ↗</a>'+
-  '<button type="button" class="btn btn-sec" onclick="moveBack(\''+id+'\')">↩ move back</button></div>';
- list.insertBefore(h,list.firstChild);return h}
-function reconcileItem(el){if(!el||!el.dataset.id)return;paintChips(el);var both=itemReplied(el)&&itemLiked(el),back=itemForcedBack(el);
- if(both&&!back){el.classList.add("hist");el.style.display="none";ensureHistCard(el)}
- else{el.classList.remove("hist");el.style.display="";var list=histList();if(list){var hc=list.querySelector('.hc[data-id="'+el.dataset.id+'"]');if(hc&&!(el.dataset.replied==="1"&&el.dataset.liked==="1"&&!back)){/* keep server hist */}}}}
-function moveBack(id){setBack(id,true);setLiked(id,false);setRepliedLocal(id,false);setDone("r",id,false);setDone("o",id,false);
- document.querySelectorAll('.bi[data-id="'+id+'"], .ri[data-id="'+id+'"], .oi[data-id="'+id+'"]').forEach(function(el){el.classList.remove("hist");el.style.display="";applyDone(el,false);paintChips(el);rememberFrom(el)});
- var list=histList();if(list){var hc=list.querySelector('.hc[data-id="'+id+'"]');if(hc&&!hc.dataset.server)hc.remove()}
- document.querySelectorAll(".batch").forEach(updProg);document.querySelectorAll("#t2 details").forEach(updThread);updHistEmpty();showJump()}
-function updHistEmpty(){var list=histList(),empty=document.getElementById("histEmpty"),n=list?list.querySelectorAll(".hc").length:0;
- if(empty)empty.style.display=n? "none":"";var badge=document.getElementById("histBadge");if(badge){badge.textContent=n;badge.classList.toggle("z",!n)}}
-function reconcileAll(){document.querySelectorAll(".bi,.ri,.oi").forEach(function(el){paintChips(el);var both=itemReplied(el)&&itemLiked(el),back=itemForcedBack(el);
-  if(both&&!back){el.classList.add("hist");el.style.display="none";ensureHistCard(el)}else{el.classList.remove("hist");if(el.style.display==="none"&&!el.classList.contains("hist"))el.style.display=""}});
- document.querySelectorAll(".batch").forEach(updProg);document.querySelectorAll("#t2 details").forEach(updThread);updHistEmpty();
- // if last-selected moved to history, clear highlight silently
- var L=getLast();if(L&&L.id){var el=findItem(L.id);if(!el||el.classList.contains("hist")||el.style.display==="none"){clearHere();showJump()}}}
+function ensureHistCard(el){
+  var id=el.dataset.id,list=histList();if(!list)return null;
+  var existing=list.querySelector('.hc[data-id="'+id+'"]');if(existing)return existing;
+  var h=document.createElement("div");h.className="r hc";h.dataset.id=id;
+  var handle=el.dataset.h||"";
+  var draft=(el.dataset.d||"").trim();
+  var url=el.dataset.url||"#";
+  var thread=el.dataset.thread||"";
+  h.innerHTML='<div class="q">'+esc(thread)+' · @'+esc(handle)+'</div><div class="d">'+esc(draft)+'</div>'+
+    '<div class="btn-row"><a target="_blank" rel="noopener" class="btn btn-sec" href="'+esc(url)+'">Open comment ↗</a>'+
+    '<button type="button" class="btn btn-sec" data-back="'+esc(id)+'">↩ move back</button></div>';
+  list.insertBefore(h,list.firstChild);return h;
+}
+function esc(s){return String(s||"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;")}
+function updProg(batch){
+  if(!batch)return;
+  var items=[].slice.call(batch.querySelectorAll(".bi"));
+  var act=items.filter(function(e){return !e.classList.contains("hist")});
+  var done=act.filter(function(e){return itemReplied(e)&&itemLiked(e)}).length;
+  var el=batch.querySelector(".prog");if(el)el.textContent=done+" of "+act.length+" fully done";
+  var badge=batch.querySelector(".bcount");if(badge)badge.textContent=String(act.length);
+  batch.style.display=act.length?"":"none";
+}
+function updThread(det){
+  if(!det||det.classList.contains("batch")||det.classList.contains("oi"))return;
+  var items=[].slice.call(det.querySelectorAll(".ri"));
+  var act=items.filter(function(e){return !e.classList.contains("hist")});
+  var badge=det.querySelector(".bcount");
+  if(badge){badge.textContent=act.length?String(act.length):"✓";badge.classList.toggle("z",!act.length)}
+  if(!act.length&&items.length)det.style.display="none"; else if(act.length)det.style.display="";
+}
+function updHistEmpty(){
+  var list=histList(),empty=document.getElementById("histEmpty"),n=list?list.querySelectorAll(".hc").length:0;
+  if(empty)empty.style.display=n?"none":"";
+  var badge=document.getElementById("histBadge");if(badge){badge.textContent=String(n);badge.classList.toggle("z",!n)}
+}
+function reconcileItem(el){
+  if(!el||!el.dataset.id)return;
+  paintActionButtons(el);
+  if(el.classList.contains("pc"))return;
+  var both=itemReplied(el)&&itemLiked(el),back=itemForcedBack(el);
+  if(both&&!back){el.classList.add("hist");el.style.display="none";ensureHistCard(el)}
+  else{el.classList.remove("hist");if(el.style.display==="none")el.style.display="";
+    var list=histList();if(list){var hc=list.querySelector('.hc[data-id="'+el.dataset.id+'"]');if(hc&&!hc.getAttribute("data-server")&&!(itemReplied(el)&&itemLiked(el)&&!back)){/* keep */}}}
+}
+function syncId(id){
+  if(!id)return;
+  var nodes=document.querySelectorAll('.bi[data-id="'+id+'"], .ri[data-id="'+id+'"], .oi[data-id="'+id+'"], .pc[data-id="'+id+'"]');
+  for(var i=0;i<nodes.length;i++)reconcileItem(nodes[i]);
+  document.querySelectorAll(".batch").forEach(updProg);
+  document.querySelectorAll("#t2 details").forEach(updThread);
+  updHistEmpty();
+}
+function resyncAll(){
+  var nodes=document.querySelectorAll(".bi,.ri,.oi,.pc");
+  for(var i=0;i<nodes.length;i++)reconcileItem(nodes[i]);
+  document.querySelectorAll(".batch").forEach(updProg);
+  document.querySelectorAll("#t2 details").forEach(updThread);
+  updHistEmpty();
+  var L=getLast();
+  if(L&&L.id){var el=findItem(L.id);if(!el||el.classList.contains("hist")){clearHere();showJump()}}
+  else showJump();
+}
+
+function markDone(cb,kind){
+  var sel=kind==="r"?".bi,.ri":kind==="o"?".oi":".pc";
+  var el=cb.closest(sel);var id=el&&el.dataset.id;if(!id)return;
+  setDone(kind,id,cb.checked);
+  if(kind==="r"||kind==="o"){setRepliedLocal(id,cb.checked);if(cb.checked){setBack(id,false);setPending(id,null)}}
+  if(kind==="p"&&cb.checked)setPending(id,null);
+  rememberFrom(el);syncId(id);
+}
+function moveBack(id){
+  setBack(id,true);setLiked(id,false);setRepliedLocal(id,false);setDone("r",id,false);setDone("o",id,false);setPending(id,null);
+  var list=histList();if(list){var hc=list.querySelector('.hc[data-id="'+id+'"]');if(hc&&!hc.getAttribute("data-server"))hc.parentNode.removeChild(hc)}
+  syncId(id);rememberFrom(document.querySelector('.bi[data-id="'+id+'"], .oi[data-id="'+id+'"]'));
+}
 function parseStatusId(v){if(!v)return "";v=(""+v).trim();var m=v.match(/(?:status\/|statuses\/|=)(\d{5,})/);if(m)return m[1];if(/^\d{5,}$/.test(v))return v;return ""}
-function savePosted(inp){var c=inp.closest(".pc"),id=c.dataset.id,sid=parseStatusId(inp.value);inp.value=sid;setPosted(id,sid);showAns(c,sid);rememberFrom(c)}
-function showAns(c,sid){var wrap=c.querySelector(".answrap");if(!wrap)return;if(sid){wrap.style.display="";var a=wrap.querySelector("a.ansbtn");if(a){var ans=(c.dataset.ans||"").trim();a.href="https://x.com/intent/post?in_reply_to="+encodeURIComponent(sid)+"&text="+encodeURIComponent(ans)}}else wrap.style.display="none"}
+function savePosted(inp){var c=inp.closest(".pc"),id=c.dataset.id,sid=parseStatusId(inp.value);inp.value=sid;setPosted(id,sid);showAns(c,sid);setPending(id,null);rememberFrom(c);syncId(id)}
+function showAns(c,sid){var wrap=c.querySelector(".answrap");if(!wrap)return;if(sid){wrap.style.display="";var a=wrap.querySelector("a.ansbtn,a.btn-answered");if(a){var ans=(c.dataset.ans||"").trim();var href="https://x.com/intent/post?in_reply_to="+encodeURIComponent(sid)+"&text="+encodeURIComponent(ans);a.setAttribute("data-href",href);if(!answerIsDone(c)&&!(itemPending(c)&&itemPending(c).kind==="answer")){a.setAttribute("href",href);a.className="btn ansbtn";a.style.background="#7856ff";a.textContent="💡 Post answer"}}}else wrap.style.display="none"}
 function copyText(b){var c=b.closest(".pc"),t=(c.dataset.t||"").trim(),ok=c.querySelector(".pok");rememberFrom(c);
  function done(){ok.textContent="Copied ✓"}
  function fb(){var ta=document.createElement("textarea");ta.value=t;document.body.appendChild(ta);ta.select();try{document.execCommand("copy");done()}catch(e){ok.textContent="Copy failed, select the post text above"}document.body.removeChild(ta)}
@@ -144,32 +296,80 @@ function approvePost(b){var c=b.closest(".pc"),ok=c.querySelector(".pok");var ms
  function done(){ok.textContent="Copied, paste it into approver1 bot's chat"}
  function fb(){var ta=document.createElement("textarea");ta.value=msg;document.body.appendChild(ta);ta.select();try{document.execCommand("copy");done()}catch(e){ok.textContent="Copy failed, select and copy this:";var p=document.createElement("pre");p.style.whiteSpace="pre-wrap";p.textContent=msg;ok.appendChild(p)}document.body.removeChild(ta)}
  if(navigator.clipboard&&navigator.clipboard.writeText)navigator.clipboard.writeText(msg).then(done,fb);else fb()}
+
 function getLast(){return _lsGet("xdash_last",null)}
 function setLast(id,tab){if(!id)return;_lsSet("xdash_last",{id:String(id),tab:+tab||0});try{if(tab)localStorage.tabv2=String(tab)}catch(e){}showJump()}
 function findById(sel,id){var nodes=document.querySelectorAll(sel);for(var i=0;i<nodes.length;i++){if(nodes[i].dataset&&nodes[i].dataset.id===id&&!nodes[i].classList.contains("hist")&&nodes[i].style.display!=="none")return nodes[i]}return null}
 function findItem(id){if(!id)return null;return findById(".bi",id)||findById(".pc",id)||findById(".oi",id)||findById(".ri",id)||findById(".hc",id)}
-function clearHere(){document.querySelectorAll(".here").forEach(function(e){e.classList.remove("here");var t=e.querySelector(".here-tag");if(t)t.remove()})}
+function clearHere(){document.querySelectorAll(".here").forEach(function(e){e.classList.remove("here");var t=e.querySelector(".here-tag");if(t)t.parentNode.removeChild(t)})}
 function applyHere(el){clearHere();if(!el)return;el.classList.add("here");if(!el.querySelector(".here-tag")){var tag=document.createElement("div");tag.className="here-tag";tag.textContent="📍 you were here";el.insertBefore(tag,el.firstChild)}}
 function itemTab(el){var pane=el&&el.closest("#t1,#t2,#t3,#t4");return pane?+pane.id.slice(1):+(localStorage.tabv2||3)}
-function rememberFrom(el){if(!el)return;var item=(el.classList&&(el.classList.contains("bi")||el.classList.contains("pc")||el.classList.contains("oi")||el.classList.contains("ri")||el.classList.contains("hc")))?el:el.closest(".bi,.pc,.oi,.ri,.hc");if(!item||!item.dataset.id)return;var tabn=itemTab(item);setLast(item.dataset.id,tabn);applyHere(item)}
+function rememberFrom(el){if(!el)return;var item=el.closest?el.closest(".bi,.pc,.oi,.ri,.hc"):null;if(!item&&el.classList)item=el;if(!item||!item.dataset||!item.dataset.id)return;var tabn=itemTab(item);setLast(item.dataset.id,tabn);applyHere(item)}
 function jumpToLast(){var L=getLast();if(!L||!L.id)return;var el=findItem(L.id);if(!el){showJump();return}var tabn=L.tab||itemTab(el);if(typeof tab==="function")tab(tabn);var d=el.closest("details");while(d){d.open=true;var p=d.parentElement;d=p?p.closest("details"):null}applyHere(el);setTimeout(function(){try{el.scrollIntoView({behavior:"smooth",block:"center"})}catch(e){try{el.scrollIntoView(true)}catch(x){}}},60);showJump()}
 function showJump(){var btn=document.getElementById("jumpLast");if(!btn)return;var L=getLast();btn.style.display=(L&&L.id&&findItem(L.id))?"":"none"}
-document.addEventListener("click",function(e){var t=e.target;if(!t||!t.closest)return;if(t.closest("#jumpLast")||t.closest(".tabs")||t.closest(".ctl"))return;
- var like=t.closest("a.likebtn");if(like)onLikeClick(like);
- var item=t.closest(".bi,.pc,.oi,.ri,.hc");if(item)rememberFrom(item)},true);
-document.addEventListener("visibilitychange",function(){if(document.visibilityState==="visible")jumpToLast()});
-window.addEventListener("pageshow",function(){jumpToLast()});
+
+function onLikeTap(a){var el=a.closest(".bi,.ri,.oi");if(!el)return;setLiked(el.dataset.id,true);setBack(el.dataset.id,false);rememberFrom(el);syncId(el.dataset.id)}
+function onReplyTap(a){var el=a.closest(".bi,.ri,.oi");if(!el)return;if(itemReplied(el))return;setPending(el.dataset.id,"reply");rememberFrom(el);syncId(el.dataset.id)}
+function onPostTap(a){var el=a.closest(".pc");if(!el)return;if(postIsDone(el))return;setPending(el.dataset.id,"post");rememberFrom(el);syncId(el.dataset.id)}
+function onAnsTap(a){var el=a.closest(".pc");if(!el)return;if(answerIsDone(el))return;setPending(el.dataset.id,"answer");rememberFrom(el);syncId(el.dataset.id)}
+
+document.addEventListener("click",function(e){
+  var t=e.target;if(!t||!t.closest)return;
+  if(t.closest("#jumpLast")||t.closest(".tabs")||t.closest(".ctl")||t.closest("#newDataPill"))return;
+  var back=t.closest("[data-back]");if(back){e.preventDefault();moveBack(back.getAttribute("data-back"));return}
+  var yn=t.closest(".confirm-bar [data-yn]");
+  if(yn){e.preventDefault();var el=yn.closest(".bi,.ri,.oi,.pc");if(!el)return;var yes=yn.getAttribute("data-yn")==="1";var pend=itemPending(el);
+    if(yes){if(pend&&pend.kind==="reply"){setRepliedLocal(el.dataset.id,true);setDone(el.classList.contains("oi")?"o":"r",el.dataset.id,true);setBack(el.dataset.id,false)}
+      else if(pend&&pend.kind==="post"){setDone("p",el.dataset.id,true)}
+      else if(pend&&pend.kind==="answer"){setAnswered(el.dataset.id,true)}
+      setPending(el.dataset.id,null)}
+    else{setPending(el.dataset.id,null)}
+    rememberFrom(el);syncId(el.dataset.id);return}
+  var und=t.closest("a.undolink");
+  if(und){e.preventDefault();var el=und.closest(".bi,.ri,.oi,.pc");if(!el)return;var u=und.getAttribute("data-u");
+    if(u==="like")setLiked(el.dataset.id,false);
+    if(u==="reply"){setRepliedLocal(el.dataset.id,false);setDone("r",el.dataset.id,false);setDone("o",el.dataset.id,false)}
+    if(u==="post")setDone("p",el.dataset.id,false);
+    if(u==="ans")setAnswered(el.dataset.id,false);
+    rememberFrom(el);syncId(el.dataset.id);return}
+  var like=t.closest("a.likebtn");if(like&&!like.getAttribute("aria-disabled"))onLikeTap(like);
+  var reply=t.closest("a.replybtn");if(reply&&!reply.getAttribute("aria-disabled"))onReplyTap(reply);
+  var post=t.closest("a.postbtn");if(post&&!post.getAttribute("aria-disabled"))onPostTap(post);
+  var ans=t.closest("a.ansbtn");if(ans&&!ans.getAttribute("aria-disabled"))onAnsTap(ans);
+  var item=t.closest(".bi,.pc,.oi,.ri,.hc");if(item)rememberFrom(item);
+},true);
+
+document.addEventListener("visibilitychange",function(){if(document.visibilityState==="visible"){resyncAll();jumpToLast()}});
+window.addEventListener("pageshow",function(){resyncAll();jumpToLast()});
+window.addEventListener("storage",function(){resyncAll()});
+
+var _syncTimer=null;
+function startSyncLoop(){if(_syncTimer)return;_syncTimer=setInterval(function(){if(document.visibilityState==="visible")resyncAll()},2000)}
+function stopSyncLoop(){if(_syncTimer){clearInterval(_syncTimer);_syncTimer=null}}
+document.addEventListener("visibilitychange",function(){if(document.visibilityState==="visible")startSyncLoop();else stopSyncLoop()});
+startSyncLoop();
+
+/* background scan refresh — iOS-safe: show pill, user taps to reload */
+var _ct0=null;
+function showNewPill(){var p=document.getElementById("newDataPill");if(!p){p=document.createElement("button");p.id="newDataPill";p.type="button";p.textContent="🆕 new scan data — tap to update";p.onclick=function(){location.href=location.pathname+"?r="+Date.now()};document.body.appendChild(p)}p.style.display=""}
+function pollScan(){if(document.visibilityState!=="visible")return;
+  var url=location.pathname+(location.pathname.indexOf("?")>=0?"&":"?")+"r="+Date.now();
+  fetch(url,{cache:"no-store",credentials:"same-origin"}).then(function(r){return r.text()}).then(function(html){
+    var m=html.match(/var B=(\{[\s\S]*?\}),K=/);if(!m)return;
+    var B=JSON.parse(m[1]);if(!_ct0){_ct0=B.ct;return}if(B.ct!==_ct0)showNewPill();
+  }).catch(function(){})}
+setInterval(pollScan,60000);
+setTimeout(pollScan,8000);
+
 (function(){
- document.querySelectorAll(".bi,.ri").forEach(function(e){if(isDone("r",e.dataset.id)||repliedMap()[e.dataset.id])applyDone(e,true)});
- document.querySelectorAll(".oi").forEach(function(e){if(isDone("o",e.dataset.id)||repliedMap()[e.dataset.id])applyDone(e,true)});
- document.querySelectorAll(".pc").forEach(function(c){
-  if(isDone("p",c.dataset.id))applyDone(c,true);
-  var sid=getPosted(c.dataset.id)||(c.dataset.posted||"");
-  var inp=c.querySelector(".posturl");if(inp&&sid)inp.value=sid;
-  showAns(c,sid);
- });
- document.querySelectorAll("a.sv").forEach(function(a){var i=document.getElementById(a.dataset.img);if(i){a.href=i.src;a.download=a.dataset.name}});
- reconcileAll();showJump();
+  document.querySelectorAll("a.likebtn,a.replybtn,a.postbtn,a.ansbtn").forEach(function(a){if(a.getAttribute("href")&&!a.getAttribute("data-href"))a.setAttribute("data-href",a.getAttribute("href"))});
+  document.querySelectorAll(".pc").forEach(function(c){
+    var sid=getPosted(c.dataset.id)||(c.dataset.posted||"");
+    var inp=c.querySelector(".posturl");if(inp&&sid)inp.value=sid;
+    showAns(c,sid);
+  });
+  document.querySelectorAll("a.sv").forEach(function(a){var i=document.getElementById(a.dataset.img);if(i){a.href=i.src;a.download=a.dataset.name}});
+  resyncAll();showJump();
 })();
 </script>'''
 
@@ -183,10 +383,17 @@ CSS_EXTRA = (
 ".chips{display:flex;gap:6px;flex-wrap:wrap;margin:6px 0}"
 ".chip{font-size:12px;font-weight:600;border-radius:99px;padding:3px 8px}"
 ".chip.ok{background:rgba(0,186,124,.2);color:#00ba7c}.chip.no{background:#2f3336;color:#8b98a5}"
-".undo-like{background:none;border:0;color:#8b98a5;font-size:11px;text-decoration:underline;padding:0 0 0 4px;cursor:pointer}"
+".chip.pend{background:rgba(255,173,31,.2);color:#ffad1f}"
+".btn-done{background:#2f3336!important;color:#8b98a5!important;opacity:.55;pointer-events:none;cursor:default}"
+".btn-pend{background:#ffad1f!important;color:#0f1419!important;pointer-events:none;cursor:default}"
+".confirm-bar{background:rgba(255,173,31,.15);border:1px solid #ffad1f;border-radius:10px;padding:8px 10px;margin:8px 0;font-size:14px;color:#e7e9ea}"
+".confirm-bar button{background:#16202a;color:#e7e9ea;border:1px solid #2f3336;border-radius:99px;padding:6px 12px;margin-left:6px;font-size:14px;font-weight:600}"
+".confirm-bar .cy{background:#00ba7c;border-color:#00ba7c;color:#fff}"
+".undo-row{margin-top:4px}.undolink{color:#8b98a5;font-size:12px;text-decoration:underline}"
 ".here{border-left:4px solid #ffd400!important;background:rgba(255,212,0,.14)!important;box-shadow:inset 4px 0 0 #ffd400}"
 ".here-tag{display:inline-block;background:#ffd400;color:#0f1419;font-size:12px;font-weight:700;border-radius:99px;padding:2px 8px;margin:0 0 8px}"
 "#jumpLast{position:fixed;bottom:16px;right:16px;z-index:98;background:#ffd400;color:#0f1419;border:0;border-radius:99px;padding:12px 16px;font-size:14px;font-weight:700;box-shadow:0 4px 16px rgba(0,0,0,.45);display:none}"
+"#newDataPill{position:fixed;bottom:16px;left:16px;right:90px;z-index:98;background:#1d9bf0;color:#fff;border:0;border-radius:99px;padding:12px 14px;font-size:14px;font-weight:700;box-shadow:0 4px 16px rgba(0,0,0,.45);display:none}"
 ".hc{background:#16202a;border-radius:14px;padding:12px;margin:10px 0;border:0}"
 )
 
@@ -238,8 +445,8 @@ for o in opps:
         f'<div class="d"><b>Q:</b> {E(o["question"])}<br><b>A:</b> {E(o["answer"])}</div>{nt}'
         f'<img src="{o["image"]}" style="width:100%;border-radius:10px;background:#fff;margin:8px 0">'
         f'<div class="d">{E(o["caption"])}</div>{chips(o.get("replied"), o.get("liked"))}'
-        f'<div class="btn-row"><a target="_blank" rel="noopener" class="btn" href="{link}">↩️ Post reply</a>'
-        f'<a target="_blank" rel="noopener" class="btn likebtn" style="flex:0 0 32%;background:#f91880" href="{llink}">❤️ Like</a></div>'
+        f'<div class="btn-row"><a target="_blank" rel="noopener" class="btn replybtn" href="{link}" data-href="{link}">↩️ Post reply</a>'
+        f'<a target="_blank" rel="noopener" class="btn likebtn" style="flex:0 0 32%;background:#f91880" href="{llink}" data-href="{llink}">❤️ Like</a></div>'
         f'<div class="mdrow"><label><input type="checkbox" class="mdone" onchange="markDone(this,\'o\')"> Mark done (replied)</label></div>'
         f'</div></details>'
     )
@@ -250,7 +457,7 @@ allr=[dict(r,thread=s['title'],my_comment=s.get('my_comment','')) for s in secs 
 allr.sort(key=lambda r:-(r.get('views') or 0))
 bs=[allr[i:i+8] for i in range(0,len(allr),8)]
 if bs:
-    out.append('<h2 style="font-size:17px;margin:14px 0 6px">↩️ Manual posting (phone)</h2><div class="q">Tap ↩️ Post reply, then check Mark done. Tap ❤️ Like (it remembers). When both chips are green it moves to 🗂 History. Batch 1 is top-viewed.</div>')
+    out.append('<h2 style="font-size:17px;margin:14px 0 6px">↩️ Manual posting (phone)</h2><div class="q">Tap ↩️ Post reply or ❤️ Like — buttons lock when done. After Post reply, confirm when you come back. When both are done it moves to History. Batch 1 is top-viewed.</div>')
 for bi,b in enumerate(bs,1):
     out.append(f'<details class="batch"{" open" if bi==1 else ""}><summary><div class="t"><span class="tt">Batch {bi} of {len(bs)}</span><span class="prog" id="prog{bi}">0 of {len(b)} fully done</span><span class="b bcount">{len(b)}</span></div></summary><div class="in" id="batch{bi}">')
     for r in b:
@@ -265,8 +472,8 @@ for bi,b in enumerate(bs,1):
             f'<div class="q"><a target="_blank" rel="noopener" href="{url}">@{E(r["handle"])}</a>: “{E(r["said"])}”</div>'
             f'<div class="d">{E(r["draft"])}</div>{chips(r.get("replied"), r.get("liked"))}{ver}'
             f'<div class="btn-row">'
-            f'<a target="_blank" rel="noopener" class="btn" href="{rlink}">↩️ Post reply</a>'
-            f'<a target="_blank" rel="noopener" class="btn likebtn" style="flex:0 0 32%;background:#f91880" href="{llink}">❤️ Like</a>'
+            f'<a target="_blank" rel="noopener" class="btn replybtn" href="{rlink}" data-href="{rlink}">↩️ Post reply</a>'
+            f'<a target="_blank" rel="noopener" class="btn likebtn" style="flex:0 0 32%;background:#f91880" href="{llink}" data-href="{llink}">❤️ Like</a>'
             f'</div>'
             f'<div class="mdrow"><label><input type="checkbox" class="mdone" onchange="markDone(this,\'r\')"> Mark done (replied)</label>'
             f'<label><input type="checkbox" class="drop" onchange="this.closest(\'.bi\').style.opacity=this.checked?.35:\'\'"> Drop from Approve</label></div>'
@@ -296,8 +503,8 @@ for s in secs:
             f'<div class="r ri" data-id="{r["id"]}" data-h="{E(r["handle"])}" data-d="{E(r["draft"].strip())}" data-replied="{rp}" data-liked="{lk}" data-thread="{E(s["title"])}" data-url="{url}">'
             f'<div class="q"><a target="_blank" rel="noopener" href="{url}">@{E(r["handle"])}</a>: “{E(r["said"])}”</div>'
             f'<div class="d">{E(r["draft"])}</div>{chips(r.get("replied"), r.get("liked"))}'
-            f'<div class="btn-row"><a target="_blank" rel="noopener" class="btn likebtn" style="flex:0 0 32%;background:#f91880" href="{llink}">❤️ Like</a>'
-            f'<a target="_blank" rel="noopener" class="btn" href="{link}">↩️ Post reply</a></div>'
+            f'<div class="btn-row"><a target="_blank" rel="noopener" class="btn likebtn" style="flex:0 0 32%;background:#f91880" href="{llink}" data-href="{llink}">❤️ Like</a>'
+            f'<a target="_blank" rel="noopener" class="btn replybtn" href="{link}" data-href="{link}">↩️ Post reply</a></div>'
             f'<div class="mdrow"><label><input type="checkbox" class="mdone" onchange="markDone(this,\'r\')"> Mark done (replied)</label></div></div>'
         )
     out.append('</div></details>')
@@ -335,7 +542,7 @@ for p in sorted(posts,key=lambda p:(ptm(p),p.get('created_ms',0))):
         f'<div style="display:flex;justify-content:space-between;align-items:center;font-weight:600;font-size:17px"><span class="tt">{E(p["title"])}</span>{pt}</div>'
         f'{im}<div class="d">{E(p["text"])}</div>{nt}{ans_block}'
         f'<div class="btn-row">'
-        f'<a target="_blank" rel="noopener" class="btn" href="{link}">📤 Post now</a>'
+        f'<a target="_blank" rel="noopener" class="btn postbtn" href="{link}" data-href="{link}">📤 Post now</a>'
         f'<button type="button" class="btn" style="background:#00ba7c" onclick="copyText(this)">📋 Copy text</button>'
         f'</div>'
         f'<div class="mdrow"><label><input type="checkbox" class="mdone" onchange="markDone(this,\'p\')"> Mark done</label></div>'
