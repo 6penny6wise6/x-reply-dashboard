@@ -1,5 +1,13 @@
 import json, html, urllib.parse as u, datetime, zoneinfo, re, time
 d=json.load(open('dashboard.json'))
+# Apply saved replied-to set (from free x timeline reads) + posted replies in post_queue.json
+# on EVERY build, so already-answered comments never show a live Post reply button.
+try:
+    import reconcile as _rc
+    _rcm,_rcmv=_rc.apply_saved(d)
+    if _rcm: print('reconcile: newly marked replied', _rcm)
+except Exception as _e:
+    print('reconcile skipped:', _e)
 now=datetime.datetime.now(zoneinfo.ZoneInfo('America/Chicago')).strftime('%a %b %-d, %-I:%M %p CT')
 d['updated']=now
 
