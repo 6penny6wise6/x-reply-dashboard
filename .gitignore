@@ -4,3 +4,4 @@ img/
 *.tmp
 __pycache__/
 preview*.html
+reconcile_data/
