@@ -144,6 +144,14 @@ function muteBtn(a,label,cls){
   a.setAttribute("aria-disabled","true");
   a.onclick=function(e){if(e){e.preventDefault();e.stopPropagation()}return false};
 }
+function pendBtn(a,label,cls){
+  if(!a)return;
+  var href=a.getAttribute("data-href");
+  if(href)a.setAttribute("href",href);
+  a.textContent=label;a.className="btn btn-pendlive "+(cls||"");a.style.background="";
+  a.removeAttribute("aria-disabled");a.onclick=null;
+}
+function gateBlocked(el){return typeof hardStopped==="function"&&(hardStopped()||inCooldown(gateOf(el)))}
 function unmuteBtn(a,label,cls,pink){
   if(!a)return;
   var href=a.getAttribute("data-href");
@@ -213,21 +221,22 @@ function paintActionButtons(el){
     reply=el.querySelector("a.replybtn,a.btn-replied");
     var pend=itemPending(el);
     if(itemReplied(el))muteBtn(reply,"↩️ Replied ✓","btn-done btn-replied");
-    else if(pend&&pend.kind==="reply")muteBtn(reply,"⏳ confirm?","btn-pend btn-replied");
+    else if(gateBlocked(el)){if(!reply.classList.contains("btn-cool")){reply.classList.add("btn-cool");reply.removeAttribute("href");reply.setAttribute("aria-disabled","true")}}
+    else if(pend&&pend.kind==="reply")pendBtn(reply,"↩️ reopen X (confirm below)","replybtn");
     else unmuteBtn(reply,"↩️ Post reply","replybtn",false);
   }
   if(el.querySelector("a.postbtn,a.btn-posted")){
     post=el.querySelector("a.postbtn,a.btn-posted");
     var pendp=itemPending(el);
     if(postIsDone(el))muteBtn(post,"📤 Posted ✓","btn-done btn-posted");
-    else if(pendp&&pendp.kind==="post")muteBtn(post,"⏳ confirm?","btn-pend btn-posted");
+    else if(pendp&&pendp.kind==="post")pendBtn(post,"📤 reopen X (confirm below)","postbtn");
     else unmuteBtn(post,"📤 Post now","postbtn",false);
   }
   if(el.querySelector("a.ansbtn,a.btn-answered")){
     ans=el.querySelector("a.ansbtn,a.btn-answered");
     var penda=itemPending(el);
     if(answerIsDone(el))muteBtn(ans,"💡 Answered ✓","btn-done btn-answered");
-    else if(penda&&penda.kind==="answer")muteBtn(ans,"⏳ confirm?","btn-pend btn-answered");
+    else if(penda&&penda.kind==="answer")pendBtn(ans,"💡 reopen X (confirm below)","ansbtn");
     else{
       var href=ans.getAttribute("data-href")||ans.getAttribute("href");
       if(href&&href!=="#"){ans.className="btn ansbtn";ans.style.background="#7856ff";ans.textContent="💡 Post answer";ans.setAttribute("href",href);ans.removeAttribute("aria-disabled");ans.onclick=null;}
@@ -336,7 +345,7 @@ function moveBack(id){
 }
 function parseStatusId(v){if(!v)return "";v=(""+v).trim();var m=v.match(/(?:status\/|statuses\/|=)(\d{5,})/);if(m)return m[1];if(/^\d{5,}$/.test(v))return v;return ""}
 function savePosted(inp){var c=inp.closest(".pc"),id=c.dataset.id,sid=parseStatusId(inp.value);inp.value=sid;setPosted(id,sid);showAns(c,sid);setPending(id,null);rememberFrom(c);syncId(id)}
-function showAns(c,sid){var wrap=c.querySelector(".answrap");if(!wrap)return;if(sid){wrap.style.display="";var a=wrap.querySelector("a.ansbtn,a.btn-answered");if(a){var ans=(c.dataset.ans||"").trim();var href="https://x.com/intent/post?in_reply_to="+encodeURIComponent(sid)+"&text="+encodeURIComponent(ans);a.setAttribute("data-href",href);if(!answerIsDone(c)&&!(itemPending(c)&&itemPending(c).kind==="answer")){a.setAttribute("href",href);a.className="btn ansbtn";a.style.background="#7856ff";a.textContent="💡 Post answer"}}}else wrap.style.display="none"}
+function showAns(c,sid){var wrap=c.querySelector(".answrap");if(!wrap)return;if(sid){wrap.style.display="";var a=wrap.querySelector("a.ansbtn,a.btn-answered");if(a){var ans=(c.dataset.ans||"").trim();var href="https://x.com/intent/post?in_reply_to="+encodeURIComponent(sid)+"&text="+encodeURIComponent(ans);a.setAttribute("data-href",href);if(!answerIsDone(c)){a.setAttribute("href",href);a.className="btn ansbtn";a.style.background="#7856ff";a.textContent="💡 Post answer"}}}else wrap.style.display="none"}
 function copyText(b){var c=b.closest(".pc"),t=(c.dataset.t||"").trim(),ok=c.querySelector(".pok");rememberFrom(c);
  function done(){ok.textContent="Copied ✓"}
  function fb(){var ta=document.createElement("textarea");ta.value=t;document.body.appendChild(ta);ta.select();try{document.execCommand("copy");done()}catch(e){ok.textContent="Copy failed, select the post text above"}document.body.removeChild(ta)}
@@ -376,6 +385,7 @@ function paceGet(){var v=_lsGet("xdash_pace2",null);
   if(!v){var old=_lsGet("xdash_pace",null);v={day:ctDayKey(),count:(old&&old.day===ctDayKey()?(old.count||0):0),counted:{},viralUntil:0,threadUntil:0};_lsSet("xdash_pace2",v)}
   if(!v.counted)v.counted={};return v}
 function paceSet(v){_lsSet("xdash_pace2",v)}
+(function(){try{if(localStorage.getItem("xdash_pace_fix")==="v1")return;var v=_lsGet("xdash_pace2",null);if(v){v.count=Object.keys(v.counted||{}).length;_lsSet("xdash_pace2",v)}localStorage.setItem("xdash_pace_fix","v1")}catch(e){}})();
 function paceEnsureDay(){var p=paceGet(),k=ctDayKey();if(p.day!==k){p={day:k,count:0,counted:{},viralUntil:p.viralUntil||0,threadUntil:p.threadUntil||0};paceSet(p)}return p}
 function gateOf(el){return el&&el.classList&&el.classList.contains("oi")?"viral":"thread"}
 function coolLeftMs(g){var p=paceEnsureDay();return Math.max(0,(p[g+"Until"]||0)-Date.now())}
@@ -418,7 +428,7 @@ function paintPace(){
     }else if(a.classList.contains("btn-cool")){
       a.classList.remove("btn-cool");
       var href=a.getAttribute("data-href");
-      if(href&&!itemReplied(el)){a.setAttribute("href",href);a.textContent="↩️ Post reply";a.removeAttribute("aria-disabled")}
+      if(href&&!itemReplied(el)){a.setAttribute("href",href);var pp=itemPending(el);a.textContent=(pp&&pp.kind==="reply")?"↩️ reopen X (confirm below)":"↩️ Post reply";a.removeAttribute("aria-disabled")}
     }
   });
   var warn=document.getElementById("paceWarn");
@@ -436,16 +446,18 @@ function tryReplyGate(el){
 function onReplyTapPaced(a){
   var el=a.closest(".bi,.ri,.oi");if(!el)return;
   if(itemReplied(el))return;
+  var pp=itemPending(el);if(pp&&pp.kind==="reply"){setPending(el.dataset.id,"reply");return}
   if(!tryReplyGate(el)){return}
   setPending(el.dataset.id,"reply");
-  rememberFrom(el);syncId(el.dataset.id);
+  later(function(){rememberFrom(el);syncId(el.dataset.id)});
 }
 
 
-function onLikeTap(a){var el=a.closest(".bi,.ri,.oi");if(!el)return;setLiked(el.dataset.id,true);setBack(el.dataset.id,false);rememberFrom(el);syncId(el.dataset.id)}
+function later(fn){setTimeout(fn,350)}
+function onLikeTap(a){var el=a.closest(".bi,.ri,.oi");if(!el)return;setLiked(el.dataset.id,true);setBack(el.dataset.id,false);later(function(){rememberFrom(el);syncId(el.dataset.id)})}
 function onReplyTap(a){onReplyTapPaced(a)}
-function onPostTap(a){var el=a.closest(".pc");if(!el)return;if(postIsDone(el))return;setPending(el.dataset.id,"post");rememberFrom(el);syncId(el.dataset.id)}
-function onAnsTap(a){var el=a.closest(".pc");if(!el)return;if(answerIsDone(el))return;setPending(el.dataset.id,"answer");rememberFrom(el);syncId(el.dataset.id)}
+function onPostTap(a){var el=a.closest(".pc");if(!el)return;if(postIsDone(el))return;setPending(el.dataset.id,"post");later(function(){rememberFrom(el);syncId(el.dataset.id)})}
+function onAnsTap(a){var el=a.closest(".pc");if(!el)return;if(answerIsDone(el))return;setPending(el.dataset.id,"answer");later(function(){rememberFrom(el);syncId(el.dataset.id)})}
 
 document.addEventListener("click",function(e){
   var t=e.target;if(!t||!t.closest)return;
@@ -476,7 +488,7 @@ document.addEventListener("click",function(e){
   var ov=t.closest("#paceOverride");if(ov){e.preventDefault();if(confirm("Post more replies today anyway?")){_lsSet("xdash_pace_override",true);paintPace()}return}
   var post=t.closest("a.postbtn");if(post&&!post.getAttribute("aria-disabled"))onPostTap(post);
   var ans=t.closest("a.ansbtn");if(ans&&!ans.getAttribute("aria-disabled"))onAnsTap(ans);
-  var item=t.closest(".bi,.pc,.oi,.ri,.hc");if(item)rememberFrom(item);
+  var item=t.closest(".bi,.pc,.oi,.ri,.hc");if(item)later(function(){rememberFrom(item)});
 },true);
 
 document.addEventListener("visibilitychange",function(){if(document.visibilityState==="visible"){resyncAll();jumpToLast()}});
@@ -503,7 +515,7 @@ setTimeout(pollScan,8000);
 
 (function(){
   migrateDoneMarks();
-  document.querySelectorAll("a.likebtn,a.replybtn,a.postbtn,a.ansbtn").forEach(function(a){if(a.getAttribute("href")&&!a.getAttribute("data-href"))a.setAttribute("data-href",a.getAttribute("href"))});
+  document.querySelectorAll("a.likebtn,a.replybtn,a.postbtn,a.ansbtn").forEach(function(a){var h=a.getAttribute("href");if(h&&h!=="#"&&!a.getAttribute("data-href"))a.setAttribute("data-href",h)});
   document.querySelectorAll(".pc").forEach(function(c){
     var sid=getPosted(c.dataset.id)||(c.dataset.posted||"");
     var inp=c.querySelector(".posturl");if(inp&&sid)inp.value=sid;
@@ -548,7 +560,7 @@ function paintNow(){var bar=document.getElementById("nowBar");if(!bar)return;var
   var j=document.createElement("button");j.type="button";j.className="btn btn-sec";j.textContent="↓ show card";j.onclick=function(){applyHere(due);due.scrollIntoView({block:"center"})};row.appendChild(j);bar.appendChild(row);
  }else if(next){bar.className="nowbar nownext";bar.style.display="";bar.textContent="⏭ next post: "+next.dataset.title+" at "+next.dataset.ptime}
  else{bar.style.display="none"}}
-document.addEventListener("click",function(e){var a=e.target&&e.target.closest&&e.target.closest("a.nowpost");if(!a)return;var c=document.querySelector('.pc[data-id="'+a.getAttribute("data-for")+'"]');if(c){var pb=c.querySelector("a.postbtn");if(pb)onPostTap(pb);else{setPending(c.dataset.id,"post");rememberFrom(c);syncId(c.dataset.id)}}bar_reset();setTimeout(paintNow,50)},true);
+document.addEventListener("click",function(e){var a=e.target&&e.target.closest&&e.target.closest("a.nowpost");if(!a)return;var c=document.querySelector('.pc[data-id="'+a.getAttribute("data-for")+'"]');if(c&&!postIsDone(c)){setPending(c.dataset.id,"post");later(function(){rememberFrom(c);syncId(c.dataset.id);bar_reset();paintNow()})}},true);
 function bar_reset(){var nb=document.getElementById("nowBar");if(nb)nb.dataset.k=""}
 paintNow();setInterval(paintNow,2000);
 </script>"""
@@ -579,7 +591,7 @@ CSS_EXTRA = (
 ".chip.ok{background:rgba(0,186,124,.2);color:#00ba7c}.chip.no{background:#2f3336;color:#8b98a5}"
 ".chip.pend{background:rgba(255,173,31,.2);color:#ffad1f}"
 ".btn-done{background:#2f3336!important;color:#8b98a5!important;opacity:.55;pointer-events:none;cursor:default}"
-".btn-pend{background:#ffad1f!important;color:#0f1419!important;pointer-events:none;cursor:default}"
+".btn-pendlive{background:#ffad1f!important;color:#0f1419!important}.btn-pend{background:#ffad1f!important;color:#0f1419!important;pointer-events:none;cursor:default}"
 ".confirm-bar{background:rgba(255,173,31,.15);border:1px solid #ffad1f;border-radius:10px;padding:8px 10px;margin:8px 0;font-size:14px;color:#e7e9ea}"
 ".confirm-bar{scroll-margin-top:180px;scroll-margin-bottom:40px}.confirm-bar button{touch-action:manipulation;min-height:40px;background:#16202a;color:#e7e9ea;border:1px solid #2f3336;border-radius:99px;padding:6px 12px;margin-left:6px;font-size:14px;font-weight:600}"
 ".confirm-bar .cy{background:#00ba7c;border-color:#00ba7c;color:#fff}"
