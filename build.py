@@ -619,7 +619,9 @@ for s in secs:
     s['replies']=[r for r in s['replies'] if not r.get('skip')]
 secs=sorted(secs,key=lambda s:(-len(s['replies']),-s.get('stats',{}).get('views',0)))
 total=sum(len(s['replies']) for s in secs)
-posts=d.get('posts',[])
+posts_all=d.get('posts',[])
+posted_live=[p for p in posts_all if p.get('posted_id')]
+posts=[p for p in posts_all if not p.get('posted_id')]
 history=d.get('history',[])
 nrep=total
 nhist=len(history)
@@ -829,6 +831,21 @@ for p in sorted(posts,key=lambda p:(_pday(p),ptm(p),p.get('created_ms',0))):
         f'<div class="q pok"></div></div>'
     )
 if not posts: P.append('<div class="q">new post ideas get added every morning</div>')
+if posted_live:
+    _pl=sorted(posted_live,key=lambda p:p.get('posted_at') or '',reverse=True)
+    P.append(f'<details class="postedlist"><summary><div class="t"><span class="tt">✅ Posted today</span><span class="b z">{len(_pl)}</span></div><div class="st">already live on X, matched from your timeline</div></summary><div class="in">')
+    for p in _pl:
+        _url=p.get('url') or f"https://x.com/MrDonnieJackson/status/{p['posted_id']}"
+        _at=''
+        try:
+            _at=datetime.datetime.fromisoformat((p.get('posted_at') or '').replace('Z','+00:00')).astimezone(zoneinfo.ZoneInfo('America/Chicago')).strftime('%-I:%M %p CT')
+        except Exception: pass
+        _ans=(p.get('answer') or '').strip()
+        _al=('<a target="_blank" rel="noopener" class="btn btn-sec" href="https://x.com/intent/post?in_reply_to='+E(str(p['posted_id']))+'&text='+u.quote(_ans,safe='')+'">💡 Post answer</a>') if _ans else ''
+        P.append(f'<div class="r"><div class="q"><b class="slab">{E(p["title"])}</b>{(" · posted "+_at) if _at else ""}{(" · slot "+E(p["post_time"])) if p.get("post_time") else ""}</div>'
+                 f'<div class="d">{E(p["text"])}</div>{statline("original post",p.get("posted_stats"),p.get("posted_stats_at"))}'
+                 f'<div class="btn-row"><a target="_blank" rel="noopener" class="btn btn-sec" href="{E(_url)}">Open post ↗</a>{_al}</div></div>')
+    P.append('</div></details>')
 out.append(''.join(P))
 
 H=['</div><div id="t4" style="display:none"><h2 style="font-size:18px;margin:14px 0 4px">🗂 History <span class="b'+(' z' if not history else '')+f'">{len(history)}</span></h2>'

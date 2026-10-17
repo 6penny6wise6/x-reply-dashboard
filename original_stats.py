@@ -13,6 +13,7 @@ Free `x` namespace only (never user-X). One call covers up to 100 sections:
 Per section it sets: stats + stats_at (his comment), original_id, original_handle,
 original_is_reply, original_stats + original_stats_at (the post his comment replied to).
 Opportunities in the id list also get fresh stats + stats_at (they ARE the original post).
+Posted originals (posts[].posted_id) get posted_stats + posted_stats_at (Posted today list).
 """
 import json, sys, re, datetime as dt
 from pathlib import Path
@@ -31,6 +32,7 @@ def main():
     if sys.argv[1:] == ['--ids']:
         ids = [i for i in (cid(s) for s in d['sections']) if i]
         ids += [o['id'] for o in d.get('opportunities') or [] if not o.get('skip')]
+        ids += [str(p['posted_id']) for p in d.get('posts') or [] if p.get('posted_id')]
         print(','.join(dict.fromkeys(ids))); return
     raw = Path(sys.argv[1]).read_text(); i = raw.find('{')
     o, _ = json.JSONDecoder().raw_decode(raw, i)
@@ -56,6 +58,10 @@ def main():
         p = mine.get(op.get('id'))
         if p:
             op['stats'] = ms(p.get('public_metrics')); op['stats_at'] = now_ms
+    for pp in d.get('posts') or []:
+        p = mine.get(str(pp.get('posted_id') or ''))
+        if p:
+            pp['posted_stats'] = ms(p.get('public_metrics')); pp['posted_stats_at'] = now_ms
     DASH.write_text(json.dumps(d, ensure_ascii=False, indent=1))
     print('updated original_stats for', n, 'sections')
 
