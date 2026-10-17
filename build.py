@@ -42,7 +42,20 @@ secs=sorted(d['sections'],key=lambda s:(-len([r for r in s['replies'] if not (r.
 def _actionable(r): return not (r.get('replied') and r.get('liked'))
 total=sum(len([r for r in s['replies'] if _actionable(r)]) for s in secs)
 E=html.escape
-def fmt(n): return f"{n/1000:.1f}K" if n>=1000 else str(n)
+def fmt(n):
+    n=n or 0
+    if n>=1_000_000: return f"{n/1_000_000:.1f}M"
+    return f"{n/1000:.1f}K" if n>=1000 else str(n)
+def _ctms(v):
+    try:
+        v=int(v)
+        if v<=0: return ''
+        return datetime.datetime.fromtimestamp(v/1000,zoneinfo.ZoneInfo('America/Chicago')).strftime('%-I:%M %p')+' CT'
+    except Exception: return ''
+def asof(v): t=_ctms(v); return f' <span class="asof">· stats as of {t}</span>' if t else ''
+def statline(label,st,at=None,extra=''):
+    if not st: return ''
+    return f'<div class="st"><b class="slab">{label}:</b> 👁 {fmt(st.get("views"))} · ❤️ {fmt(st.get("likes"))} · 💬 {fmt(st.get("replies"))}{extra}{asof(at)}</div>'
 def chips(replied=False, liked=False):
     rc='ok' if replied else 'no'; lc='ok' if liked else 'no'
     rt='↩️ replied ✓' if replied else '↩️ not replied'
@@ -164,7 +177,7 @@ function ensureConfirm(el){
   var pend=itemPending(el);
   var bar=el.querySelector(".confirm-bar");
   if(!pend){if(bar)bar.parentNode.removeChild(bar);return}
-  if(itemReplied(el)&&pend.kind==="reply"){setPending(el.dataset.id,null);if(bar)bar.parentNode.removeChild(bar);return}
+  if(itemReplied(el)&&pend.kind==="reply"){confirmReply(el,pend.at);setPending(el.dataset.id,null);if(bar)bar.parentNode.removeChild(bar);return}
   if(postIsDone(el)&&pend.kind==="post"){setPending(el.dataset.id,null);if(bar)bar.parentNode.removeChild(bar);return}
   if(answerIsDone(el)&&pend.kind==="answer"){setPending(el.dataset.id,null);if(bar)bar.parentNode.removeChild(bar);return}
   if(!bar){
@@ -301,6 +314,7 @@ function markDone(cb,kind){
   var sel=kind==="r"?".bi,.ri":kind==="o"?".oi":".pc";
   var el=cb.closest(sel);var id=el&&el.dataset.id;if(!id)return;
   var on=!!cb.checked;
+  if(on&&(kind==="r"||kind==="o")&&!itemReplied(el))confirmReply(el);
   setDone(kind,id,on);
   if(kind==="r"||kind==="o"){
     /* Mark done = FULLY DONE: replied + liked */
@@ -351,66 +365,79 @@ function jumpToLast(){var L=getLast();if(!L||!L.id)return;var el=findItem(L.id);
 function showJump(){var btn=document.getElementById("jumpLast");if(!btn)return;var L=getLast();btn.style.display=(L&&L.id&&findItem(L.id))?"":"none"}
 
 
-/* —— reply pacing (shared across tabs) —— */
+/* —— reply pacing: two gates, started only on CONFIRMED replies —— */
+/* viral = top-level replies on other people's posts (.oi), 10-15 min.
+   thread = replies to commenters in his own threads (.bi/.ri), 3-5 min.
+   v2 key ignores the old xdash_pace coolUntil (it was set on tap, not post). */
 function ctParts(){var p={};new Intl.DateTimeFormat("en-US",{timeZone:"America/Chicago",year:"numeric",month:"2-digit",day:"2-digit",hour:"2-digit",minute:"2-digit",second:"2-digit",hour12:false}).formatToParts(new Date()).forEach(function(x){p[x.type]=x.value});return p}
 function ctDayKey(){var p=ctParts();return p.year+"-"+p.month+"-"+p.day}
-function paceGet(){return _lsGet("xdash_pace",{day:"",count:0,coolUntil:0})}
-function paceSet(v){_lsSet("xdash_pace",v)}
-function paceEnsureDay(){var p=paceGet(),k=ctDayKey();if(p.day!==k){p={day:k,count:0,coolUntil:p.coolUntil||0};paceSet(p)}return p}
-function coolLeftMs(){var p=paceEnsureDay();return Math.max(0,(p.coolUntil||0)-Date.now())}
-function inCooldown(){return coolLeftMs()>0}
+var GATES={viral:{min:10,span:6,label:"viral reply"},thread:{min:3,span:3,label:"thread reply"}};
+function paceGet(){var v=_lsGet("xdash_pace2",null);
+  if(!v){var old=_lsGet("xdash_pace",null);v={day:ctDayKey(),count:(old&&old.day===ctDayKey()?(old.count||0):0),counted:{},viralUntil:0,threadUntil:0};_lsSet("xdash_pace2",v)}
+  if(!v.counted)v.counted={};return v}
+function paceSet(v){_lsSet("xdash_pace2",v)}
+function paceEnsureDay(){var p=paceGet(),k=ctDayKey();if(p.day!==k){p={day:k,count:0,counted:{},viralUntil:p.viralUntil||0,threadUntil:p.threadUntil||0};paceSet(p)}return p}
+function gateOf(el){return el&&el.classList&&el.classList.contains("oi")?"viral":"thread"}
+function coolLeftMs(g){var p=paceEnsureDay();return Math.max(0,(p[g+"Until"]||0)-Date.now())}
+function inCooldown(g){return coolLeftMs(g)>0}
 function fmtCool(ms){var s=Math.ceil(ms/1000),m=Math.floor(s/60),r=s%60;return m+":"+(r<10?"0":"")+r}
-function startCooldown(){var p=paceEnsureDay();var mins=10+Math.floor(Math.random()*6);p.coolUntil=Date.now()+mins*60*1000;paceSet(p);paintPace()}
-function bumpReplyCount(){var p=paceEnsureDay();p.count=(p.count||0)+1;paceSet(p);paintPace()}
 function replyCount(){return paceEnsureDay().count||0}
 function hardStopped(){return replyCount()>=30 && !_lsGet("xdash_pace_override",false)}
 function softWarned(){return replyCount()>=25}
+/* call when a reply is CONFIRMED (yes / Mark done / verified). from = when it was posted (ms). */
+function confirmReply(el,from){
+  if(!el||!el.dataset.id)return;var id=el.dataset.id,p=paceEnsureDay();
+  if(p.counted[id])return;
+  p.counted[id]=1;p.count=(p.count||0)+1;
+  var g=gateOf(el),G=GATES[g],until=(from||Date.now())+(G.min+Math.random()*G.span)*60000;
+  if(until>(p[g+"Until"]||0))p[g+"Until"]=until;
+  paceSet(p);paintPace();
+}
 function paintPace(){
-  var p=paceEnsureDay(), left=coolLeftMs(), bar=document.getElementById("paceBar"), day=document.getElementById("paceDay");
+  var p=paceEnsureDay(), lv=coolLeftMs("viral"), lt=coolLeftMs("thread"), bar=document.getElementById("paceBar"), day=document.getElementById("paceDay");
   if(day){
     var n=p.count||0, cls=n>=30?"pace-hard":(n>=25?"pace-soft":"");
     day.className="pace-day "+cls;
     day.textContent="replies today: "+n+" of 25"+(n>=30?" · hard stop (30)":(n>=25?" · soft cap":""));
   }
   if(bar){
-    if(left>0){bar.style.display="";bar.innerHTML="⏳ next reply in <b>"+fmtCool(left)+"</b> · likes still ok · good time to post an original 📝"}
+    if(lv>0||lt>0){bar.style.display="";
+      bar.innerHTML="⏳ "+(lv>0?"next viral reply in <b>"+fmtCool(lv)+"</b>":"viral replies ready ✓")+" · "+(lt>0?"next thread reply in <b>"+fmtCool(lt)+"</b>":"thread replies ready ✓")+" · likes always ok"+(lv>0?" · good time to post an original 📝":"")}
     else{bar.style.display="none"}
   }
-  var blocked=left>0||hardStopped();
+  var hs=hardStopped();
   document.querySelectorAll("a.replybtn").forEach(function(a){
     if(a.getAttribute("aria-disabled")==="true"&&a.classList.contains("btn-done"))return;
+    var el=a.closest(".bi,.ri,.oi"),g=gateOf(el),blocked=hs||inCooldown(g);
     if(blocked){
       if(!a.getAttribute("data-href")&&a.getAttribute("href"))a.setAttribute("data-href",a.getAttribute("href"));
       a.removeAttribute("href");
       a.classList.add("btn-cool");
       a.setAttribute("aria-disabled","true");
-      if(hardStopped())a.textContent="🛑 daily limit";
-      else a.textContent="⏳ cooldown";
+      a.textContent=hs?"🛑 daily limit":"⏳ "+fmtCool(coolLeftMs(g));
     }else if(a.classList.contains("btn-cool")){
       a.classList.remove("btn-cool");
       var href=a.getAttribute("data-href");
-      if(href&&!itemReplied(a.closest(".bi,.ri,.oi"))){a.setAttribute("href",href);a.textContent="↩️ Post reply";a.removeAttribute("aria-disabled")}
+      if(href&&!itemReplied(el)){a.setAttribute("href",href);a.textContent="↩️ Post reply";a.removeAttribute("aria-disabled")}
     }
   });
   var warn=document.getElementById("paceWarn");
   if(warn){
-    if(hardStopped()){warn.style.display="";warn.innerHTML="hard stop at 30 replies today. <a href=\"#\" id=\"paceOverride\">post anyway</a>"}
-    else if(softWarned()){warn.style.display="";warn.textContent="soft cap hit (25). slow down — hard stop at 30."}
+    if(hs){warn.style.display="";warn.innerHTML="hard stop at 30 replies today. <a href=\"#\" id=\"paceOverride\">post anyway</a>"}
+    else if(softWarned()){warn.style.display="";warn.textContent="soft cap hit (25). slow down, hard stop at 30."}
     else warn.style.display="none";
   }
 }
 function tryReplyGate(el){
-  if(hardStopped()){paintPace();return false}
-  if(inCooldown()){paintPace();return false}
+  if(hardStopped()||inCooldown(gateOf(el))){paintPace();return false}
   return true;
 }
+/* a tap only marks pending; nothing is counted or cooled until confirmed */
 function onReplyTapPaced(a){
   var el=a.closest(".bi,.ri,.oi");if(!el)return;
   if(itemReplied(el))return;
   if(!tryReplyGate(el)){return}
   setPending(el.dataset.id,"reply");
-  bumpReplyCount();
-  startCooldown();
   rememberFrom(el);syncId(el.dataset.id);
 }
 
@@ -426,7 +453,7 @@ document.addEventListener("click",function(e){
   var back=t.closest("[data-back]");if(back){e.preventDefault();moveBack(back.getAttribute("data-back"));return}
   var yn=t.closest(".confirm-bar [data-yn]");
   if(yn){e.preventDefault();var el=yn.closest(".bi,.ri,.oi,.pc");if(!el)return;var yes=yn.getAttribute("data-yn")==="1";var pend=itemPending(el);
-    if(yes){if(pend&&pend.kind==="reply"){setRepliedLocal(el.dataset.id,true);setDone(el.classList.contains("oi")?"o":"r",el.dataset.id,true);setBack(el.dataset.id,false)}
+    if(yes){if(pend&&pend.kind==="reply"){confirmReply(el);setRepliedLocal(el.dataset.id,true);setDone(el.classList.contains("oi")?"o":"r",el.dataset.id,true);setBack(el.dataset.id,false)}
       else if(pend&&pend.kind==="post"){setDone("p",el.dataset.id,true)}
       else if(pend&&pend.kind==="answer"){setAnswered(el.dataset.id,true)}
       setPending(el.dataset.id,null)}
@@ -443,7 +470,7 @@ document.addEventListener("click",function(e){
   var like=t.closest("a.likebtn");if(like&&!like.getAttribute("aria-disabled"))onLikeTap(like);
   var reply=t.closest("a.replybtn");
   if(reply&&!reply.getAttribute("aria-disabled")){
-    if(hardStopped()||inCooldown()){e.preventDefault();paintPace();return}
+    if(!tryReplyGate(reply.closest(".bi,.ri,.oi"))){e.preventDefault();return}
     onReplyTap(reply);
   }
   var ov=t.closest("#paceOverride");if(ov){e.preventDefault();if(confirm("Post more replies today anyway?")){_lsSet("xdash_pace_override",true);paintPace()}return}
@@ -527,6 +554,7 @@ CSS_EXTRA = (
 ".pace-day.pace-soft{border-color:#ffad1f;color:#ffad1f}.pace-day.pace-hard{border-color:#f4212e;color:#f4212e}"
 "#paceWarn{background:rgba(244,33,46,.12);border:1px solid #f4212e;color:#f4212e;border-radius:10px;padding:8px 12px;margin:8px 0;font-size:14px;display:none}"
 ".btn-cool{background:#2f3336!important;color:#8b98a5!important;opacity:.6;pointer-events:none}"
+".slab{color:#e7e9ea;font-weight:600}.asof{color:#5c6670;font-size:12px}"
 ".dupflag{color:#ffad1f;font-size:12px;font-weight:600}"
 ".tipline{color:#8b98a5;font-size:13px;margin:6px 0 10px}"
 ".hc{background:#16202a;border-radius:14px;padding:12px;margin:10px 0;border:0}"
@@ -554,7 +582,7 @@ summary{{list-style:none;padding:14px;cursor:pointer}}summary::-webkit-details-m
 .tabs{{display:flex;gap:6px;margin:12px 0;position:sticky;top:0;background:#0f1419;padding:6px 0;z-index:5;flex-wrap:wrap}}.tabs button{{flex:1;min-width:40%;background:#16202a;color:#e7e9ea;border:0;border-radius:12px;padding:10px 8px;font-size:13px;font-weight:600}}.tabs button.on{{background:#1d9bf0}}.ctl{{margin:8px 0}}.ctl button{{background:#2f3336;color:#e7e9ea;border:0;border-radius:99px;padding:6px 12px;margin-right:6px}}
 ''' + CSS_EXTRA + f'''</style></head><body>
 <h1>Reply Dashboard <span class="b">{total} to reply</span></h1><div class="q">🔎 Last scanned X: <b>{E(d.get('last_scanned') or now)}</b> · page built {now}</div><button onclick="location.href=location.pathname+'?r='+Date.now()" style="width:100%;margin:10px 0 0;background:#00ba7c;color:#fff;border:0;border-radius:99px;padding:10px;font-size:16px;font-weight:600">🔄 Refresh</button>
-<div class="ctl"><button onclick="document.querySelectorAll('details').forEach(x=>x.open=true)">Expand all</button><button onclick="document.querySelectorAll('details').forEach(x=>x.open=false)">Collapse all</button></div><div class="pace-day" id="paceDay">replies today: …</div><div id="paceWarn"></div><div id="paceBar"></div><div class="tipline">💡 one top-level reply per post, no copy-paste answers. space replies 10–15 min apart.</div>''']
+<div class="ctl"><button onclick="document.querySelectorAll('details').forEach(x=>x.open=true)">Expand all</button><button onclick="document.querySelectorAll('details').forEach(x=>x.open=false)">Collapse all</button></div><div class="pace-day" id="paceDay">replies today: …</div><div id="paceWarn"></div><div id="paceBar"></div><div class="tipline">💡 one top-level reply per post, no copy-paste answers. viral replies 10–15 min apart, thread replies 3–5 min. timers start once a reply is confirmed.</div>''']
 
 out.append(
  f'<div class="tabs">'
@@ -575,7 +603,7 @@ for o in opps:
     out.append(
         f'<details class="oi" data-id="{o["id"]}" data-replied="{rp}" data-liked="{lk}" data-h="{E(o["author"])}" data-d="{E(o["caption"].strip())}" data-thread="{E(o["title"])}" data-url="https://x.com/{o["author"]}/status/{o["id"]}">'
         f'<summary><div class="t"><span class="tt">{E(o["title"])}</span><span class="b">new</span></div>'
-        f'<div class="st">@{E(o["author"])} · 👁 {fmt(st["views"])} · ❤️ {st["likes"]} · 💬 {st["replies"]}</div></summary>'
+        f'<div class="st">@{E(o["author"])}</div>{statline("original post",st,o.get("stats_at"))}</summary>'
         f'<div class="in"><div class="q"><a target="_blank" rel="noopener" href="https://x.com/{o["author"]}/status/{o["id"]}">Open original post ↗</a></div>'
         f'<div class="d"><b>Q:</b> {E(o["question"])}<br><b>A:</b> {E(o["answer"])}</div>{nt}'
         f'<img src="{o["image"]}" style="width:100%;border-radius:10px;background:#fff;margin:8px 0">'
@@ -603,7 +631,7 @@ for bi,b in enumerate(bs,1):
         ver=f'<div class="q" style="color:#00ba7c">verified reply on X ✓</div>' if r.get('replied') and r.get('my_reply_id') else ''
         out.append(
             f'<div class="r bi" data-id="{r["id"]}" data-h="{E(r["handle"])}" data-d="{E(r["draft"].strip())}" data-replied="{rp}" data-liked="{lk}" data-thread="{E(r["thread"])}" data-url="{url}">'
-            f'<div class="q">{E(r["thread"])} · 👁 {fmt(r.get("views") or 0)}</div>'
+            f'<div class="q">{E(r["thread"])} · <b class="slab">their reply:</b> 👁 {fmt(r.get("views") or 0)}</div>'
             f'<div class="q"><a target="_blank" rel="noopener" href="{url}">@{E(r["handle"])}</a>: “{E(r["said"])}”</div>'
             f'<div class="d">{E(r["draft"])}</div>{"<div class=\"dupflag\">⚠️ similar opening to another draft — rewrite before posting</div>" if r["id"] in dup_ids else ""}{chips(r.get("replied"), r.get("liked"))}{ver}'
             f'<div class="btn-row">'
@@ -627,8 +655,12 @@ for s in secs:
     n=len([r for r in s['replies'] if _actionable(r)]); st=s.get('stats')
     if n==0 and not s['replies']: continue
     if n==0: continue  # hide threads with nothing actionable
-    sl=f'<div class="st">👁 {fmt(st["views"])} views · ❤️ {st["likes"]} · 💬 {st["replies"]} replies</div>' if st else ''
-    out.append(f'<details><summary><div class="t"><span class="tt">{E(s["title"])}</span><span class="b bcount">{n}</span></div>{sl}</summary><div class="in"><div class="q"><a target="_blank" rel="noopener" href="{s["my_comment"]}">Open my comment ↗</a></div>')
+    sl=statline("your comment",st,s.get('stats_at'))
+    oid=s.get('original_id'); oh=s.get('original_handle') or 'i'
+    olab=(f"parent comment (@{E(oh)})" if s.get('original_is_reply') else "original post")
+    sl+=statline(olab,s.get('original_stats'),s.get('original_stats_at'))
+    olink=f' · <a target="_blank" rel="noopener" href="https://x.com/{E(oh)}/status/{E(oid)}">Open {"parent comment" if s.get("original_is_reply") else "original post"} ↗</a>' if oid else ''
+    out.append(f'<details><summary><div class="t"><span class="tt">{E(s["title"])}</span><span class="b bcount">{n}</span></div>{sl}</summary><div class="in"><div class="q"><a target="_blank" rel="noopener" href="{s["my_comment"]}">Open my comment ↗</a>{olink}</div>')
     for r in s['replies']:
         link='https://x.com/intent/post?in_reply_to='+r['id']+'&text='+u.quote(r['draft'].strip(),safe='')
         llink='https://x.com/intent/like?tweet_id='+r['id']
@@ -636,7 +668,7 @@ for s in secs:
         rp='1' if r.get('replied') else '0'; lk='1' if r.get('liked') else '0'
         out.append(
             f'<div class="r ri" data-id="{r["id"]}" data-h="{E(r["handle"])}" data-d="{E(r["draft"].strip())}" data-replied="{rp}" data-liked="{lk}" data-thread="{E(s["title"])}" data-url="{url}">'
-            f'<div class="q"><a target="_blank" rel="noopener" href="{url}">@{E(r["handle"])}</a>: “{E(r["said"])}”</div>'
+            f'<div class="q"><a target="_blank" rel="noopener" href="{url}">@{E(r["handle"])}</a>: “{E(r["said"])}” · <b class="slab">their reply:</b> 👁 {fmt(r.get("views") or 0)}</div>'
             f'<div class="d">{E(r["draft"])}</div>{"<div class=\"dupflag\">⚠️ similar opening to another draft — rewrite before posting</div>" if r["id"] in dup_ids else ""}{chips(r.get("replied"), r.get("liked"))}'
             f'<div class="btn-row"><a target="_blank" rel="noopener" class="btn likebtn" style="flex:0 0 32%;background:#f91880" href="{llink}" data-href="{llink}">❤️ Like</a>'
             f'<a target="_blank" rel="noopener" class="btn replybtn" href="{link}" data-href="{link}">↩️ Post reply</a></div>'
