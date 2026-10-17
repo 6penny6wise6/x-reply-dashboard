@@ -42,7 +42,8 @@ summary{{list-style:none;padding:14px;cursor:pointer}}summary::-webkit-details-m
 <div class="ctl"><button onclick="document.querySelectorAll('details').forEach(x=>x.open=true)">Expand all</button><button onclick="document.querySelectorAll('details').forEach(x=>x.open=false)">Collapse all</button></div>''']
 opps=d.get('opportunities',[])
 nrep=total
-out.append(f'<div class="tabs"><button id="b1" onclick="tab(1)">🎯 New posts <span class="b{" z" if not opps else ""}">{len(opps)}</span></button><button id="b2" onclick="tab(2)">💬 Replies &amp; likes <span class="b{" z" if not nrep else ""}">{nrep}</span></button></div><div id="t1"><div class="cd" id="cd1">⏱️ …</div><a target="_blank" rel="noopener" class="btn" style="display:block;text-align:center;background:#1d9bf0;margin:6px 0" href="https://github.com/6penny6wise6/x-reply-dashboard/actions/workflows/scan-now.yml">🔍 Scan now</a><div class="cd" id="scanst">Scan status: checking…</div>')
+posts=d.get('posts',[])  # list of {id,title,text,image?,answer?,note?,post_time?,created_ms}
+out.append(f'<div class="tabs"><button id="b1" onclick="tab(1)">🎯 New posts <span class="b{" z" if not opps else ""}">{len(opps)}</span></button><button id="b2" onclick="tab(2)">💬 Replies &amp; likes <span class="b{" z" if not nrep else ""}">{nrep}</span></button><button id="b3" onclick="tab(3)">📝 Post to our page <span class="b{" z" if not posts else ""}">{len(posts)}</span></button></div><div id="t1"><div class="cd" id="cd1">⏱️ …</div><a target="_blank" rel="noopener" class="btn" style="display:block;text-align:center;background:#1d9bf0;margin:6px 0" href="https://github.com/6penny6wise6/x-reply-dashboard/actions/workflows/scan-now.yml">🔍 Scan now</a><div class="cd" id="scanst">Scan status: checking…</div>')
 out.append(f'<h2 style="font-size:18px;margin:18px 0 4px">🎯 New posts to answer <span class="b{" z" if not opps else ""}">{len(opps)}</span></h2><div class="q">Save the image (press and hold, then Save to Photos), tap Post reply, then attach it.</div>')
 for o in opps:
     st=o['stats']; link='https://x.com/intent/post?in_reply_to='+o['id']+'&text='+u.quote(o['caption'],safe='')
@@ -78,6 +79,27 @@ for s in secs:
     out.append('</div></details>')
 out.append(SJS.replace('__SS__',json.dumps(d.get('scan_status'))))
 out.append(JS.replace('__BUILT__',str(int(__import__('time').time()*1000))).replace('__RIDDLE__',str(d.get('last_riddle_scan_ms') or 0)))
-out.append('</div><script>function tab(n){for(const i of [1,2]){document.getElementById("t"+i).style.display=i==n?"":"none";document.getElementById("b"+i).className=i==n?"on":""}localStorage.tab=n}tab(+(localStorage.tab||1))</script></body></html>')
+def ptm(p):
+    import re
+    m=re.match(r'\s*(\d{1,2})(?::(\d\d))?\s*([AaPp])',p.get('post_time') or '')
+    if not m: return 9999
+    h=int(m.group(1))%12+(12 if m.group(3).lower()=='p' else 0); return h*60+int(m.group(2) or 0)
+P=['</div><div id="t3" style="display:none"><h2 style="font-size:18px;margin:14px 0 4px">📝 Post to our page <span class="b'+(' z' if not posts else '')+f'">{len(posts)}</span></h2><div class="cd">original posts count toward monetization, replies don\'t. aim for 1 to 3 a day.</div><div class="q">Save the image first (🖼 Save image, or press and hold it and Save to Photos), tap 📤 Post it, then attach the image yourself from your photos. Nothing posts from this page.</div>']
+for p in sorted(posts,key=lambda p:(ptm(p),p.get('created_ms',0))):
+    link='https://x.com/intent/post?text='+u.quote(p['text'],safe='')
+    img=p.get('image'); absimg=('/workspace/x-dashboard/'+img) if img else 'none'
+    pt=f'<span class="b">🕒 {E(p["post_time"])}</span>' if p.get('post_time') else ''
+    im=f'<img id="pi_{E(p["id"])}" src="{E(img)}" style="width:100%;border-radius:10px;background:#fff;margin:8px 0"><div class="q">📎 attach this image yourself from your photos after tapping Post it. <a class="sv" data-img="pi_{E(p["id"])}" data-name="{E(img.split("/")[-1])}" href="#" target="_blank" rel="noopener">🖼 Save image</a></div>' if img else ''
+    nt=f'<div class="q" style="color:#ffad1f">💡 {E(p["note"])}</div>' if p.get('note') else ''
+    ans=f'<details style="background:#0f1419;margin:8px 0"><summary class="q" style="padding:8px">answer (post as a reply later)</summary><div class="d" style="padding:0 8px 8px">{E(p["answer"])}</div></details>' if p.get('answer') else ''
+    P.append(f'<div class="r pc" style="background:#16202a;border-radius:14px;padding:14px;margin:12px 0;border:0" data-id="{E(p["id"])}" data-t="{E(p["text"])}" data-img="{E(absimg)}"><div style="display:flex;justify-content:space-between;align-items:center;font-weight:600;font-size:17px"><span class="tt">{E(p["title"])}</span>{pt}</div>{im}<div class="d">{E(p["text"])}</div>{nt}{ans}<div style="display:flex;gap:8px"><a target="_blank" rel="noopener" class="btn" style="flex:1" href="{link}">📤 Post it</a><button class="btn" style="flex:1;background:#00ba7c;border:0;font-size:15px" onclick="approvePost(this)">✅ Approve</button></div><div class="q pok"></div></div>')
+if not posts: P.append('<div class="q">new post ideas get added every morning</div>')
+P.append("""<script>document.querySelectorAll('a.sv').forEach(function(a){var i=document.getElementById(a.dataset.img);if(i){a.href=i.src;a.download=a.dataset.name}});
+function approvePost(b){var c=b.closest('.pc'),ok=c.querySelector('.pok');var msg='APPROVE post '+c.dataset.id+': '+c.dataset.t+' ['+c.dataset.img+']';
+function done(){ok.textContent='Copied, paste it into approver1 bot\\'s chat'}
+function fb(){var ta=document.createElement('textarea');ta.value=msg;document.body.appendChild(ta);ta.select();try{document.execCommand('copy');done()}catch(e){ok.textContent='Copy failed, select and copy this:';var p=document.createElement('pre');p.style.whiteSpace='pre-wrap';p.textContent=msg;ok.appendChild(p)}document.body.removeChild(ta)}
+if(navigator.clipboard&&navigator.clipboard.writeText){navigator.clipboard.writeText(msg).then(done,fb)}else fb()}</script>""")
+out.append(''.join(P))
+out.append('</div><script>function tab(n){for(const i of [1,2,3]){document.getElementById("t"+i).style.display=i==n?"":"none";document.getElementById("b"+i).className=i==n?"on":""}localStorage.tab=n}tab(+(localStorage.tab||1))</script></body></html>')
 import seal; seal.publish('\n'.join(out))  # encrypted publish; never write plaintext index.html
 print(total)
