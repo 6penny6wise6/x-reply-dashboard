@@ -26,7 +26,7 @@ function tick(){var c=ct(),now=c.h*3600+c.m*60+c.s,r,q;
  if(c.h<7||now>=22*3600)q="🎯 Next riddle scan in "+hms(until(now,7))+" (7 AM CT)";else{q="🎯 Next riddle scan in ~"+hms((c.h+1)*3600-now)}
  document.getElementById("cd2").textContent=r+ago(BUILT);document.getElementById("cd1").textContent=q+ago(RIDDLE)}
 tick();setInterval(tick,1000);</script>'''
-# Manual mode: localStorage done flags + posted status IDs
+# Manual mode: localStorage done flags + posted status IDs + last-selected
 MAN=r'''<script>
 function _lsGet(k,fb){try{var v=localStorage.getItem(k);return v?JSON.parse(v):fb}catch(e){return fb}}
 function _lsSet(k,v){try{localStorage.setItem(k,JSON.stringify(v))}catch(e){}}
@@ -35,12 +35,12 @@ function setDone(kind,id,on){var m=_lsGet("xdash_done",{});if(on)m[kind+":"+id]=
 function getPosted(id){var m=_lsGet("xdash_posted",{});return m[id]||""}
 function setPosted(id,sid){var m=_lsGet("xdash_posted",{});if(sid)m[id]=sid;else delete m[id];_lsSet("xdash_posted",m)}
 function applyDone(el,on){if(!el)return;el.classList.toggle("done",!!on);var cb=el.querySelector(".mdone");if(cb)cb.checked=!!on}
-function markDone(cb,kind){var el=cb.closest(kind==="r"?".bi":".pc");var id=el&&el.dataset.id;if(!id)return;setDone(kind,id,cb.checked);applyDone(el,cb.checked);if(kind==="r"){var b=el.closest(".batch");if(b)updProg(b)}}
+function markDone(cb,kind){var el=cb.closest(kind==="r"?".bi":".pc");var id=el&&el.dataset.id;if(!id)return;setDone(kind,id,cb.checked);applyDone(el,cb.checked);if(kind==="r"){var b=el.closest(".batch");if(b)updProg(b)}rememberFrom(el)}
 function updProg(batch){var items=batch.querySelectorAll(".bi"),done=0;items.forEach(function(e){if(isDone("r",e.dataset.id))done++});var el=batch.querySelector(".prog");if(el)el.textContent=done+" of "+items.length+" done"}
 function parseStatusId(v){if(!v)return "";v=(""+v).trim();var m=v.match(/(?:status\/|statuses\/|=)(\d{5,})/);if(m)return m[1];if(/^\d{5,}$/.test(v))return v;return ""}
-function savePosted(inp){var c=inp.closest(".pc"),id=c.dataset.id,sid=parseStatusId(inp.value);inp.value=sid;setPosted(id,sid);showAns(c,sid)}
+function savePosted(inp){var c=inp.closest(".pc"),id=c.dataset.id,sid=parseStatusId(inp.value);inp.value=sid;setPosted(id,sid);showAns(c,sid);rememberFrom(c)}
 function showAns(c,sid){var wrap=c.querySelector(".answrap");if(!wrap)return;if(sid){wrap.style.display="";var a=wrap.querySelector("a.ansbtn");if(a){var ans=(c.dataset.ans||"").trim();a.href="https://x.com/intent/post?in_reply_to="+encodeURIComponent(sid)+"&text="+encodeURIComponent(ans)}}else wrap.style.display="none"}
-function copyText(b){var c=b.closest(".pc"),t=(c.dataset.t||"").trim(),ok=c.querySelector(".pok");
+function copyText(b){var c=b.closest(".pc"),t=(c.dataset.t||"").trim(),ok=c.querySelector(".pok");rememberFrom(c);
  function done(){ok.textContent="Copied ✓"}
  function fb(){var ta=document.createElement("textarea");ta.value=t;document.body.appendChild(ta);ta.select();try{document.execCommand("copy");done()}catch(e){ok.textContent="Copy failed, select the post text above"}document.body.removeChild(ta)}
  if(navigator.clipboard&&navigator.clipboard.writeText)navigator.clipboard.writeText(t).then(done,fb);else fb()}
@@ -49,11 +49,25 @@ function approve(n,t){var items=[].slice.call(document.querySelectorAll("#batch"
  var msg="APPROVE batch "+n+" of "+t+" ("+items.length+" replies + likes"+(dropped?", "+dropped+" dropped":"")+")\n"+items.map(function(e,i){return (i+1)+". reply_to "+e.dataset.id+" (@"+e.dataset.h+"): "+e.dataset.d.trim()}).join("\n");
  var ok=document.getElementById("ok"+n);function done(){ok.textContent="Copied, paste it into approver1 bot's chat"}
  if(navigator.clipboard&&navigator.clipboard.writeText){navigator.clipboard.writeText(msg).then(done,fb)}else fb();
- function fb(){var ta=document.createElement("textarea");ta.value=msg;document.body.appendChild(ta);ta.select();try{document.execCommand("copy");done()}catch(e){ok.textContent="Copy failed, select and copy this:";var p=document.createElement("pre");p.style.whiteSpace="pre-wrap";p.textContent=msg;ok.appendChild(p)}document.body.removeChild(ta)}}
-function approvePost(b){var c=b.closest(".pc"),ok=c.querySelector(".pok");var msg="APPROVE post "+c.dataset.id+": "+c.dataset.t.trim()+" ["+c.dataset.img+"]";
+ function fb(){var ta=document.createElement("textarea");ta.value=msg;document.body.appendChild(ta);ta.select();try{document.execCommand("copy");done()}catch(e){ok.textContent="Copy failed, select and copy this:";var p=document.createElement("pre");p.style.whiteSpace="pre-wrap";p.textContent=msg;ok.appendChild(p)}document.body.removeChild(ta)}
+ if(items[0])rememberFrom(items[0])}
+function approvePost(b){var c=b.closest(".pc"),ok=c.querySelector(".pok");var msg="APPROVE post "+c.dataset.id+": "+c.dataset.t.trim()+" ["+c.dataset.img+"]";rememberFrom(c);
  function done(){ok.textContent="Copied, paste it into approver1 bot's chat"}
  function fb(){var ta=document.createElement("textarea");ta.value=msg;document.body.appendChild(ta);ta.select();try{document.execCommand("copy");done()}catch(e){ok.textContent="Copy failed, select and copy this:";var p=document.createElement("pre");p.style.whiteSpace="pre-wrap";p.textContent=msg;ok.appendChild(p)}document.body.removeChild(ta)}
  if(navigator.clipboard&&navigator.clipboard.writeText)navigator.clipboard.writeText(msg).then(done,fb);else fb()}
+function getLast(){return _lsGet("xdash_last",null)}
+function setLast(id,tab){if(!id)return;_lsSet("xdash_last",{id:String(id),tab:+tab||0});try{if(tab)localStorage.tabv2=String(tab)}catch(e){}showJump()}
+function findById(sel,id){var nodes=document.querySelectorAll(sel);for(var i=0;i<nodes.length;i++){if(nodes[i].dataset&&nodes[i].dataset.id===id)return nodes[i]}return null}
+function findItem(id){if(!id)return null;return findById(".bi",id)||findById(".pc",id)||findById(".oi",id)||findById(".ri",id)}
+function clearHere(){document.querySelectorAll(".here").forEach(function(e){e.classList.remove("here");var t=e.querySelector(".here-tag");if(t)t.remove()})}
+function applyHere(el){clearHere();if(!el)return;el.classList.add("here");if(!el.querySelector(".here-tag")){var tag=document.createElement("div");tag.className="here-tag";tag.textContent="📍 you were here";el.insertBefore(tag,el.firstChild)}}
+function itemTab(el){var pane=el&&el.closest("#t1,#t2,#t3");return pane?+pane.id.slice(1):+(localStorage.tabv2||3)}
+function rememberFrom(el){if(!el)return;var item=(el.classList&&(el.classList.contains("bi")||el.classList.contains("pc")||el.classList.contains("oi")||el.classList.contains("ri")))?el:el.closest(".bi,.pc,.oi,.ri");if(!item||!item.dataset.id)return;var tabn=itemTab(item);setLast(item.dataset.id,tabn);applyHere(item)}
+function jumpToLast(){var L=getLast();if(!L||!L.id)return;var el=findItem(L.id);if(!el){showJump();return}var tabn=L.tab||itemTab(el);if(typeof tab==="function")tab(tabn);var d=el.closest("details");while(d){d.open=true;var p=d.parentElement;d=p?p.closest("details"):null}applyHere(el);setTimeout(function(){try{el.scrollIntoView({behavior:"smooth",block:"center"})}catch(e){try{el.scrollIntoView(true)}catch(x){}}},60);showJump()}
+function showJump(){var btn=document.getElementById("jumpLast");if(!btn)return;var L=getLast();btn.style.display=(L&&L.id&&findItem(L.id))?"":"none"}
+document.addEventListener("click",function(e){var t=e.target;if(!t||!t.closest)return;if(t.closest("#jumpLast")||t.closest(".tabs")||t.closest(".ctl"))return;var item=t.closest(".bi,.pc,.oi,.ri");if(item)rememberFrom(item)},true);
+document.addEventListener("visibilitychange",function(){if(document.visibilityState==="visible")jumpToLast()});
+window.addEventListener("pageshow",function(){jumpToLast()});
 (function(){
  document.querySelectorAll(".bi").forEach(function(e){if(isDone("r",e.dataset.id))applyDone(e,true)});
  document.querySelectorAll(".batch").forEach(updProg);
@@ -64,6 +78,7 @@ function approvePost(b){var c=b.closest(".pc"),ok=c.querySelector(".pok");var ms
   showAns(c,sid);
  });
  document.querySelectorAll("a.sv").forEach(function(a){var i=document.getElementById(a.dataset.img);if(i){a.href=i.src;a.download=a.dataset.name}});
+ showJump();
 })();
 </script>'''
 out=[f'''<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
@@ -85,7 +100,7 @@ summary{{list-style:none;padding:14px;cursor:pointer}}summary::-webkit-details-m
 .mdrow label{{display:flex;gap:8px;align-items:center}}
 .mdrow input{{width:20px;height:20px}}
 .posturl{{width:100%;box-sizing:border-box;padding:10px;font-size:15px;border-radius:10px;border:1px solid #2f3336;background:#0f1419;color:#e7e9ea;margin:6px 0}}
-.tabs{{display:flex;gap:8px;margin:12px 0;position:sticky;top:0;background:#0f1419;padding:6px 0;z-index:5}}.tabs button{{flex:1;background:#16202a;color:#e7e9ea;border:0;border-radius:12px;padding:10px;font-size:15px;font-weight:600}}.tabs button.on{{background:#1d9bf0}}.ctl{{margin:8px 0}}.ctl button{{background:#2f3336;color:#e7e9ea;border:0;border-radius:99px;padding:6px 12px;margin-right:6px}}</style></head><body>
+.here{{border-left:4px solid #ffd400!important;background:rgba(255,212,0,.14)!important;box-shadow:inset 4px 0 0 #ffd400}}.here-tag{{display:inline-block;background:#ffd400;color:#0f1419;font-size:12px;font-weight:700;border-radius:99px;padding:2px 8px;margin:0 0 8px}}#jumpLast{{position:fixed;bottom:16px;right:16px;z-index:98;background:#ffd400;color:#0f1419;border:0;border-radius:99px;padding:12px 16px;font-size:14px;font-weight:700;box-shadow:0 4px 16px rgba(0,0,0,.45);display:none}}.tabs{{display:flex;gap:8px;margin:12px 0;position:sticky;top:0;background:#0f1419;padding:6px 0;z-index:5}}.tabs button{{flex:1;background:#16202a;color:#e7e9ea;border:0;border-radius:12px;padding:10px;font-size:15px;font-weight:600}}.tabs button.on{{background:#1d9bf0}}.ctl{{margin:8px 0}}.ctl button{{background:#2f3336;color:#e7e9ea;border:0;border-radius:99px;padding:6px 12px;margin-right:6px}}</style></head><body>
 <h1>Reply Dashboard <span class="b">{total} to reply</span></h1><div class="q">🔎 Last scanned X: <b>{E(d.get('last_scanned') or now)}</b> · page built {now}</div><button onclick="location.href=location.pathname+'?r='+Date.now()" style="width:100%;margin:10px 0 0;background:#00ba7c;color:#fff;border:0;border-radius:99px;padding:10px;font-size:16px;font-weight:600">🔄 Refresh</button>
 <div class="ctl"><button onclick="document.querySelectorAll('details').forEach(x=>x.open=true)">Expand all</button><button onclick="document.querySelectorAll('details').forEach(x=>x.open=false)">Collapse all</button></div>''']
 opps=d.get('opportunities',[])
@@ -96,7 +111,7 @@ out.append(f'<h2 style="font-size:18px;margin:18px 0 4px">💬 Viral posts to re
 for o in opps:
     st=o['stats']; link='https://x.com/intent/post?in_reply_to='+o['id']+'&text='+u.quote(o['caption'].strip(),safe='')
     nt=f'<div class="q" style="color:#ffad1f">⚠️ {E(o["note"])}</div>' if o.get('note') else ''
-    out.append(f'<details><summary><div class="t"><span class="tt">{E(o["title"])}</span><span class="b">new</span></div><div class="st">@{E(o["author"])} · 👁 {fmt(st["views"])} · ❤️ {st["likes"]} · 💬 {st["replies"]}</div></summary><div class="in"><div class="q"><a target="_blank" rel="noopener" href="https://x.com/{o["author"]}/status/{o["id"]}">Open original post ↗</a></div><div class="d"><b>Q:</b> {E(o["question"])}<br><b>A:</b> {E(o["answer"])}</div>{nt}<img src="{o["image"]}" style="width:100%;border-radius:10px;background:#fff;margin:8px 0"><div class="d">{E(o["caption"])}</div><a target="_blank" rel="noopener" class="btn" href="{link}">↩️ Reply on their post (@{E(o["author"])})</a></div></details>')
+    out.append(f'<details class="oi" data-id="{o["id"]}"><summary><div class="t"><span class="tt">{E(o["title"])}</span><span class="b">new</span></div><div class="st">@{E(o["author"])} · 👁 {fmt(st["views"])} · ❤️ {st["likes"]} · 💬 {st["replies"]}</div></summary><div class="in"><div class="q"><a target="_blank" rel="noopener" href="https://x.com/{o["author"]}/status/{o["id"]}">Open original post ↗</a></div><div class="d"><b>Q:</b> {E(o["question"])}<br><b>A:</b> {E(o["answer"])}</div>{nt}<img src="{o["image"]}" style="width:100%;border-radius:10px;background:#fff;margin:8px 0"><div class="d">{E(o["caption"])}</div><a target="_blank" rel="noopener" class="btn" href="{link}">↩️ Reply on their post (@{E(o["author"])})</a></div></details>')
 if not opps: out.append('<div class="q">Nothing new right now. The next scan runs within the hour, or tap Scan now.</div>')
 out.append('</div><div id="t2" style="display:none"><div class="cd" id="cd2">⏱️ …</div>')
 allr=[dict(r,thread=s['title']) for s in secs for r in s['replies']]
@@ -135,7 +150,7 @@ for s in secs:
     out.append(f'<details><summary><div class="t"><span class="tt">{E(s["title"])}</span><span class="b{" z" if n==0 else ""}">{n if n else "✓"}</span></div>{sl}</summary><div class="in"><div class="q"><a target="_blank" rel="noopener" href="{s["my_comment"]}">Open my comment ↗</a></div>')
     for r in s['replies']:
         link='https://x.com/intent/post?in_reply_to='+r['id']+'&text='+u.quote(r['draft'].strip(),safe='')
-        out.append(f'<div class="r"><div class="q"><a target="_blank" rel="noopener" href="https://x.com/{r["handle"]}/status/{r["id"]}">@{E(r["handle"])}</a>: “{E(r["said"])}”</div><div class="d">{E(r["draft"])}</div><div class="btn-row"><a target="_blank" rel="noopener" class="btn" style="flex:0 0 32%;background:#f91880" href="https://x.com/intent/like?tweet_id={r["id"]}">❤️ Like</a><a target="_blank" rel="noopener" class="btn" href="{link}">↩️ Post reply</a></div></div>')
+        out.append(f'<div class="r ri" data-id="{r["id"]}"><div class="q"><a target="_blank" rel="noopener" href="https://x.com/{r["handle"]}/status/{r["id"]}">@{E(r["handle"])}</a>: “{E(r["said"])}”</div><div class="d">{E(r["draft"])}</div><div class="btn-row"><a target="_blank" rel="noopener" class="btn" style="flex:0 0 32%;background:#f91880" href="https://x.com/intent/like?tweet_id={r["id"]}">❤️ Like</a><a target="_blank" rel="noopener" class="btn" href="{link}">↩️ Post reply</a></div></div>')
     if n==0: out.append('<div class="q" style="padding-top:8px">All caught up ✅</div>')
     out.append('</div></details>')
 out.append(SJS.replace('__SS__',json.dumps(d.get('scan_status'))))
@@ -179,6 +194,6 @@ for p in sorted(posts,key=lambda p:(ptm(p),p.get('created_ms',0))):
 if not posts: P.append('<div class="q">new post ideas get added every morning</div>')
 out.append(''.join(P))
 out.append(MAN)
-out.append('</div><script>function tab(n){for(const i of [1,2,3]){document.getElementById("t"+i).style.display=i==n?"":"none";document.getElementById("b"+i).className=i==n?"on":""}localStorage.tabv2=n}tab(+(localStorage.tabv2||3))</script></body></html>')
+out.append('</div><button type="button" id="jumpLast" onclick="jumpToLast()">📍 Jump to where I left off</button><script>function tab(n){for(const i of [1,2,3]){document.getElementById("t"+i).style.display=i==n?"":"none";document.getElementById("b"+i).className=i==n?"on":""}localStorage.tabv2=n}var _L=typeof getLast==="function"?getLast():null;if(_L&&_L.id&&typeof findItem==="function"&&findItem(_L.id)){jumpToLast()}else{tab(+(localStorage.tabv2||3));if(typeof showJump==="function")showJump()}</script></body></html>')
 import seal; seal.publish('\n'.join(out))  # encrypted publish; never write plaintext index.html
 print(total)
