@@ -1,0 +1,6 @@
+# Plaintext state stays local only. Published index.html is encrypted by seal.py.
+dashboard.json
+img/
+*.tmp
+__pycache__/
+preview*.html

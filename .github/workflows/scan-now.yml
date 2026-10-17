@@ -1,0 +1,13 @@
+name: Scan now
+on:
+  workflow_dispatch:
+jobs:
+  trigger:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Kick off riddle scan
+        env:
+          URL: ${{ secrets.SCAN_WEBHOOK_URL }}
+          KEY: ${{ secrets.SCAN_WEBHOOK_KEY }}
+        run: |
+          curl -fsS -X POST "$URL" -H "Authorization: Bearer $KEY" -H "Content-Type: application/json" -d '{"source":"dashboard-scan-now"}'
