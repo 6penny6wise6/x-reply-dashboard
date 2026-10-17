@@ -716,7 +716,7 @@ for o in opps:
         f'<div class="st">@{E(o["author"])}</div>{statline("original post",st,o.get("stats_at"))}</summary>'
         f'<div class="in"><div class="q"><a target="_blank" rel="noopener" href="https://x.com/{o["author"]}/status/{o["id"]}">Open original post ↗</a></div>'
         f'<div class="d"><b>Q:</b> {E(o["question"])}<br><b>A:</b> {E(o["answer"])}</div>{nt}'
-        f'<img src="{o["image"]}" style="width:100%;border-radius:10px;background:#fff;margin:8px 0">'
+        + (f'<img src="{o["image"]}" style="width:100%;border-radius:10px;background:#fff;margin:8px 0">' if o.get('image') else '<div class="q">no image for this one, the caption carries it</div>') +
         f'<div class="d">{E(o["caption"])}</div>{"<div class=\"dupflag\">⚠️ similar opening to another draft — rewrite before posting</div>" if o["id"] in dup_ids else ""}{chips(o.get("replied"), o.get("liked"))}'
         f'<div class="btn-row"><a target="_blank" rel="noopener" class="btn replybtn" href="{link}" data-href="{link}">↩️ Post reply</a>'
         f'<a target="_blank" rel="noopener" class="btn likebtn" style="flex:0 0 32%;background:#f91880" href="{llink}" data-href="{llink}">❤️ Like</a></div>'
