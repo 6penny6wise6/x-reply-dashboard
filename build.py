@@ -515,7 +515,45 @@ setTimeout(pollScan,8000);
 })();
 </script>'''
 
-opps=sorted([o for o in d.get('opportunities',[]) if not o.get('skip')], key=lambda o:(o.get('priority',9), -(o.get('stats',{}).get('views') or 0)))
+def _load_targets():
+    base=['its_The_Dr','DavidLimbaugh','atensnut','TONYxTWO','CynicalPublius']
+    try:
+        txt=open('/workspace/x-growth/atensnut_lookalikes.md').read()
+        sec=txt.split('## 3.')[1].split('## 4.')[0] if '## 3.' in txt else ''
+        for h in re.findall(r'\[@([A-Za-z0-9_]+)\]',sec):
+            if h not in base: base.append(h)
+    except Exception: pass
+    return base
+TARGETS=_load_targets(); _TL={h.lower():i for i,h in enumerate(TARGETS)}
+FARM={h.lower() for h in (d.get('farm_blocklist') or [])}
+RESET=r"""<script>(function(){try{var R=__RESET__;if(!R||!R.v||localStorage.getItem("xdash_reset_v")===R.v)return;
+function g(k){try{return JSON.parse(localStorage.getItem(k)||"{}")||{}}catch(e){return {}}}function s(k,v){localStorage.setItem(k,JSON.stringify(v))}
+var dn=g("xdash_done"),po=g("xdash_posted"),an=g("xdash_answered"),pe=g("xdash_pending"),bk=g("xdash_back");
+(R.ids||[]).forEach(function(id){delete dn["p:"+id];delete po[id];delete an[id];delete pe[id];delete bk[id]});
+s("xdash_done",dn);s("xdash_posted",po);s("xdash_answered",an);s("xdash_pending",pe);s("xdash_back",bk);localStorage.setItem("xdash_reset_v",R.v)}catch(e){}})();</script>"""
+NOWJS=r"""<script>
+function ctNowMin(){var p=ctParts();return {day:p.year+"-"+p.month+"-"+p.day,m:(+p.hour%24)*60+(+p.minute)}}
+function paintNow(){var bar=document.getElementById("nowBar");if(!bar)return;var tb=document.querySelector(".tabs");if(tb)bar.style.top=(tb.offsetHeight+4)+"px";var n=ctNowMin(),due=null,next=null;
+ document.querySelectorAll(".pc").forEach(function(c){if(c.dataset.day!==n.day||postIsDone(c))return;var pend=itemPending(c);var sl=+c.dataset.slot;if(isNaN(sl)||sl>=9999)return;
+  if(sl<=n.m){if(!due)due=c}else if(!next)next=c});
+ var key=due?("d"+due.dataset.id+(itemPending(due)?"p":"")):next?("n"+next.dataset.id):"x";if(bar.dataset.k===key)return;bar.dataset.k=key;
+ if(due){var img=due.querySelector("img"),pa=due.querySelector("a.postbtn");var href=pa?(pa.getAttribute("data-href")||pa.getAttribute("href")):"#";var pend=itemPending(due);
+  bar.className="nowbar";bar.style.display="";bar.innerHTML="";
+  var h=document.createElement("div");h.className="nowh";h.textContent="📌 post this now · "+due.dataset.title+" (slot "+due.dataset.ptime+")";bar.appendChild(h);
+  if(img){var im=document.createElement("img");im.src=img.src;im.className="nowimg";bar.appendChild(im);var sv=document.createElement("a");sv.href=img.src;sv.download=(due.dataset.img||"image.jpg").split("/").pop();sv.target="_blank";sv.rel="noopener";sv.className="q";sv.textContent="🖼 Save image";bar.appendChild(sv)}
+  var d=document.createElement("div");d.className="d";d.textContent=due.dataset.t||"";bar.appendChild(d);
+  var row=document.createElement("div");row.className="btn-row";
+  if(pend&&pend.kind==="post"){var w=document.createElement("div");w.className="q";w.textContent="⏳ waiting for you to confirm it posted. scroll to the card below and tap yes or no";row.appendChild(w)}
+  else{var a=document.createElement("a");a.className="btn nowpost";a.target="_blank";a.rel="noopener";a.href=href;a.textContent="📤 Post now";a.setAttribute("data-for",due.dataset.id);row.appendChild(a)}
+  var j=document.createElement("button");j.type="button";j.className="btn btn-sec";j.textContent="↓ show card";j.onclick=function(){applyHere(due);due.scrollIntoView({block:"center"})};row.appendChild(j);bar.appendChild(row);
+ }else if(next){bar.className="nowbar nownext";bar.style.display="";bar.textContent="⏭ next post: "+next.dataset.title+" at "+next.dataset.ptime}
+ else{bar.style.display="none"}}
+document.addEventListener("click",function(e){var a=e.target&&e.target.closest&&e.target.closest("a.nowpost");if(!a)return;var c=document.querySelector('.pc[data-id="'+a.getAttribute("data-for")+'"]');if(c){var pb=c.querySelector("a.postbtn");if(pb)onPostTap(pb);else{setPending(c.dataset.id,"post");rememberFrom(c);syncId(c.dataset.id)}}setTimeout(paintNow,50)},true);
+paintNow();setInterval(paintNow,2000);
+</script>"""
+opps=[o for o in d.get('opportunities',[]) if not o.get('skip') and (o.get('author') or '').lower() not in FARM]
+for o in opps: o['_trank']=_TL.get((o.get('author') or '').lower())
+opps.sort(key=lambda o:(0 if o['_trank'] is not None else 1, o['_trank'] if o['_trank'] is not None else 0, o.get('priority',9), -(o.get('stats',{}).get('views') or 0)))
 for s in secs:
     s['replies']=[r for r in s['replies'] if not r.get('skip')]
 secs=sorted(secs,key=lambda s:(-len(s['replies']),-s.get('stats',{}).get('views',0)))
@@ -558,6 +596,10 @@ CSS_EXTRA = (
 ".dupflag{color:#ffad1f;font-size:12px;font-weight:600}"
 ".tipline{color:#8b98a5;font-size:13px;margin:6px 0 10px}"
 ".hc{background:#16202a;border-radius:14px;padding:12px;margin:10px 0;border:0}"
+"#nowBar{position:sticky;top:56px;z-index:4;background:#1a1f12;border:2px solid #ffd400;border-radius:14px;padding:10px 12px;margin:10px 0;max-height:48vh;overflow:auto;box-shadow:0 6px 18px rgba(0,0,0,.5)}"
+"#nowBar.nownext{border:1px solid #2f3336;background:#16181c;color:#8b98a5;font-size:14px;padding:8px 12px}"
+".nowh{font-weight:700;font-size:16px;color:#ffd400;margin-bottom:6px}.nowimg{width:100%;max-height:22vh;object-fit:contain;border-radius:10px;background:#fff;margin:6px 0}"
+".ntag{font-size:12px;color:#8b98a5}.revnote{color:#ffad1f;margin:4px 0 8px}"
 )
 
 out=[f'''<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
@@ -602,7 +644,7 @@ for o in opps:
     rp='1' if o.get('replied') else '0'; lk='1' if o.get('liked') else '0'
     out.append(
         f'<details class="oi" data-id="{o["id"]}" data-replied="{rp}" data-liked="{lk}" data-h="{E(o["author"])}" data-d="{E(o["caption"].strip())}" data-thread="{E(o["title"])}" data-url="https://x.com/{o["author"]}/status/{o["id"]}">'
-        f'<summary><div class="t"><span class="tt">{E(o["title"])}</span><span class="b">new</span></div>'
+        f'<summary><div class="t"><span class="tt">{E(o["title"])}</span>{('<span class="b" style="background:#00ba7c">🎯 target</span>') if o['_trank'] is not None else '<span class="b z ntag">not a target</span>'}</div>'
         f'<div class="st">@{E(o["author"])}</div>{statline("original post",st,o.get("stats_at"))}</summary>'
         f'<div class="in"><div class="q"><a target="_blank" rel="noopener" href="https://x.com/{o["author"]}/status/{o["id"]}">Open original post ↗</a></div>'
         f'<div class="d"><b>Q:</b> {E(o["question"])}<br><b>A:</b> {E(o["answer"])}</div>{nt}'
@@ -684,13 +726,18 @@ def ptm(p):
     if not m: return 9999
     h=int(m.group(1))%12+(12 if m.group(3).lower()=='p' else 0); return h*60+int(m.group(2) or 0)
 
-P=['</div><div id="t3" style="display:none"><h2 style="font-size:18px;margin:14px 0 4px">📝 Post to our page <span class="b'+(' z' if not posts else '')+f'">{len(posts)}</span></h2><div class="cd">original posts count toward monetization, replies don\'t. aim for 1 to 3 a day.</div><div class="q">🖼 Save image, tap 📤 Post now, then attach the image in the composer. Intents can\'t attach images. Nothing posts from this page.</div>']
-for p in sorted(posts,key=lambda p:(ptm(p),p.get('created_ms',0))):
+P=['</div><div id="t3" style="display:none"><h2 style="font-size:18px;margin:14px 0 4px">📝 Post to our page <span class="b'+(' z' if not posts else '')+f'">{len(posts)}</span></h2><div class="cd">original posts count toward monetization, replies don\'t. today\'s slots are spaced 1 to 2 hours apart.</div><div class="q">🖼 Save image, tap 📤 Post now, then attach the image in the composer. Intents can\'t attach images. Nothing posts from this page.</div>']
+_today=datetime.datetime.now(zoneinfo.ZoneInfo('America/Chicago')).strftime('%Y-%m-%d')
+def _pday(p): return p.get('slot_date') or _today
+P.append('<div id="nowBar" style="display:none"></div><div class="q revnote">⚠️ if X shows "Under review" on your checkmark, posts can sit in review for a while. wait and check your profile before posting again so you don\'t make duplicates.</div>')
+for p in sorted(posts,key=lambda p:(_pday(p),ptm(p),p.get('created_ms',0))):
     link='https://x.com/intent/post?text='+u.quote(p['text'].strip(),safe='')
     img=p.get('image'); absimg=('/workspace/x-dashboard/'+img) if img else 'none'
-    pt=f'<span class="b">🕒 {E(p["post_time"])}</span>' if p.get('post_time') else ''
+    _dlab='' if _pday(p)==_today else datetime.date.fromisoformat(_pday(p)).strftime('%a %b %-d')+' · '
+    pt=f'<span class="b{" z" if _dlab else ""}">🕒 slot {_dlab}{E(p["post_time"])}</span>' if p.get('post_time') else ''
     im=f'<img id="pi_{E(p["id"])}" src="{E(img)}" style="width:100%;border-radius:10px;background:#fff;margin:8px 0"><div class="q">intents can\'t attach images, so save the image and attach it in the composer. <a class="sv" data-img="pi_{E(p["id"])}" data-name="{E(img.split("/")[-1])}" href="#" target="_blank" rel="noopener">🖼 Save image</a></div>' if img else ''
     nt=f'<div class="q" style="color:#ffad1f">💡 {E(p["note"])}</div>' if p.get('note') else ''
+    if p.get('not_posted_note'): nt=f'<div class="q" style="color:#f4212e">↻ not posted: {E(p["not_posted_note"])}</div>'+nt
     ans_text=(p.get('answer') or '').strip()
     ans_block=''
     if ans_text:
@@ -705,7 +752,7 @@ for p in sorted(posts,key=lambda p:(ptm(p),p.get('created_ms',0))):
     P.append(
         f'<div class="r pc" style="background:#16202a;border-radius:14px;padding:14px;margin:12px 0;border:0" '
         f'data-id="{E(p["id"])}" data-t="{E(p["text"].strip())}" data-img="{E(absimg)}" '
-        f'data-ans="{E(ans_text)}" data-posted="{posted}">'
+        f'data-ans="{E(ans_text)}" data-posted="{posted}" data-day="{E(_pday(p))}" data-slot="{ptm(p)}" data-title="{E(p["title"])}" data-ptime="{E(p.get("post_time") or "")}">'
         f'<div style="display:flex;justify-content:space-between;align-items:center;font-weight:600;font-size:17px"><span class="tt">{E(p["title"])}</span>{pt}</div>'
         f'{im}<div class="d">{E(p["text"])}</div>{nt}{ans_block}'
         f'<div class="btn-row">'
@@ -736,7 +783,9 @@ for h in history:
 H.append('</div></div>')
 out.append(''.join(H))
 
+out.append(RESET.replace('__RESET__',json.dumps(d.get('post_reset') or {})))
 out.append(MAN)
+out.append(NOWJS)
 out.append(
  '</div><button type="button" id="jumpLast" onclick="jumpToLast()">📍 Jump to where I left off</button>'
  '<script>function tab(n){for(const i of [1,2,3,4]){var t=document.getElementById("t"+i),b=document.getElementById("b"+i);if(t)t.style.display=i==n?"":"none";if(b)b.className=i==n?"on":""}localStorage.tabv2=n}'
