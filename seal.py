@@ -46,8 +46,8 @@ def embed_images(html):
                 from PIL import Image
                 import io
                 im = Image.open(p).convert('RGB')
-                im.thumbnail((1080, 1350))
-                buf = io.BytesIO(); im.save(buf, 'JPEG', quality=82, optimize=True, progressive=True)
+                im.thumbnail((800, 1000))
+                buf = io.BytesIO(); im.save(buf, 'JPEG', quality=78, optimize=True, progressive=True)
                 _CACHE[p] = 'data:image/jpeg;base64,' + b64(buf.getvalue())
             except Exception:
                 mt = mimetypes.guess_type(p)[0] or 'image/png'
@@ -76,12 +76,15 @@ button{width:100%;background:#1d9bf0;color:#fff;border:0;border-radius:99px;padd
 <body><div id="f" style="display:none"><h1>🔒 Reply Dashboard</h1><form onsubmit="go(event)"><input id="p" type="password" autocomplete="current-password" placeholder="Password" autofocus><button>Unlock</button></form><div id="m"></div></div><div id="w">🔓 Unlocking…</div>
 <script>
 var B=__BLOB__,K="xdash_key_v1";
-function ub(s){return Uint8Array.from(atob(s),function(c){return c.charCodeAt(0)})}
+function ub(s){var b=atob(s),n=b.length,a=new Uint8Array(n);for(var i=0;i<n;i++)a[i]=b.charCodeAt(i);return a}
+function st(t){var w=document.getElementById("w");if(w)w.textContent=t}
+window.onerror=function(m){st("⚠️ "+m);var f=document.getElementById("f");if(f)f.style.display=""};
+setTimeout(function(){var w=document.getElementById("w");if(w&&w.style.display!=="none"&&document.getElementById("f")){w.innerHTML="Still unlocking… <a href=\"#\" onclick=\"try{localStorage.removeItem(K)}catch(e){};location.href=location.pathname;return false\" style=\"color:#1d9bf0\">tap here to reset</a>"}},12000);
 function bu(a){var s="";new Uint8Array(a).forEach(function(c){s+=String.fromCharCode(c)});return btoa(s)}
 async function open_(mk){var s=crypto.subtle,h=await s.importKey("raw",mk,"HKDF",false,["deriveKey"]);
  var k=await s.deriveKey({name:"HKDF",hash:"SHA-256",salt:ub(B.bsalt),info:new TextEncoder().encode("x-reply-dashboard v1")},h,{name:"AES-GCM",length:256},false,["decrypt"]);
- var pt=await s.decrypt({name:"AES-GCM",iv:ub(B.iv)},k,ub(B.ct));return new TextDecoder().decode(pt)}
-function show(html){document.open();document.write(html);document.close()}
+ st("🔓 Decrypting…");var pt=await s.decrypt({name:"AES-GCM",iv:ub(B.iv)},k,ub(B.ct));return new TextDecoder().decode(pt)}
+function show(html){st("🔓 Opening…");setTimeout(function(){document.open();document.write(html);document.close()},0)}
 function ask(msg){document.getElementById("w").style.display="none";document.getElementById("f").style.display="";document.getElementById("m").textContent=msg||""}
 async function go(e){e.preventDefault();var pw=document.getElementById("p").value;document.getElementById("m").textContent="Unlocking…";
  try{var s=crypto.subtle,pk=await s.importKey("raw",new TextEncoder().encode(pw),"PBKDF2",false,["deriveBits"]);
@@ -96,8 +99,10 @@ async function go(e){e.preventDefault();var pw=document.getElementById("p").valu
 LOCK = ('<button onclick="try{localStorage.removeItem(\'xdash_key_v1\')}catch(e){};location.href=location.pathname" '
         'style="position:fixed;top:10px;right:10px;z-index:99;background:#2f3336;color:#e7e9ea;border:0;border-radius:99px;padding:6px 12px;font-size:14px">🔒 Lock</button>')
 
+ERRBAR = '<script>window.onerror=function(m,u,l){var d=document.createElement("div");d.style.cssText="background:#f4212e;color:#fff;padding:8px;font-size:13px";d.textContent="⚠️ page error: "+m+" (line "+l+")";document.body&&document.body.insertBefore(d,document.body.firstChild)}</script>'
+
 def publish(html):
-    html = html.replace('<body>', '<body>' + LOCK, 1)
+    html = html.replace('<body>', '<body>' + ERRBAR + LOCK, 1)
     blob = encrypt(html)
     out = SHELL.replace('__MARK__', MARK).replace('__BLOB__', json.dumps(blob))
     tmp = os.path.join(HERE, 'index.html.tmp')
