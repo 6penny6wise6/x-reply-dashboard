@@ -70,7 +70,7 @@ function tick(){var c=ct(),now=c.h*3600+c.m*60+c.s,r,q;
  document.getElementById("cd2").textContent=r+ago(BUILT);document.getElementById("cd1").textContent=q+ago(RIDDLE)}
 tick();setInterval(tick,1000);</script>'''
 
-# Manual mode + live sync / Mark done = fully done
+# Manual mode + pacing + fully-done Mark done
 MAN=r'''<script>
 function _lsGet(k,fb){try{var v=localStorage.getItem(k);return v?JSON.parse(v):fb}catch(e){return fb}}
 function _lsSet(k,v){try{localStorage.setItem(k,JSON.stringify(v))}catch(e){}}
@@ -286,6 +286,7 @@ function syncId(id){
   updHistEmpty();
 }
 function resyncAll(){
+  paintPace();
   var nodes=document.querySelectorAll(".bi,.ri,.oi,.pc");
   for(var i=0;i<nodes.length;i++)reconcileItem(nodes[i]);
   document.querySelectorAll(".batch").forEach(updProg);
@@ -349,8 +350,73 @@ function rememberFrom(el){if(!el)return;var item=el.closest?el.closest(".bi,.pc,
 function jumpToLast(){var L=getLast();if(!L||!L.id)return;var el=findItem(L.id);if(!el){showJump();return}var tabn=L.tab||itemTab(el);if(typeof tab==="function")tab(tabn);var d=el.closest("details");while(d){d.open=true;var p=d.parentElement;d=p?p.closest("details"):null}applyHere(el);setTimeout(function(){try{el.scrollIntoView({behavior:"smooth",block:"center"})}catch(e){try{el.scrollIntoView(true)}catch(x){}}},60);showJump()}
 function showJump(){var btn=document.getElementById("jumpLast");if(!btn)return;var L=getLast();btn.style.display=(L&&L.id&&findItem(L.id))?"":"none"}
 
+
+/* —— reply pacing (shared across tabs) —— */
+function ctParts(){var p={};new Intl.DateTimeFormat("en-US",{timeZone:"America/Chicago",year:"numeric",month:"2-digit",day:"2-digit",hour:"2-digit",minute:"2-digit",second:"2-digit",hour12:false}).formatToParts(new Date()).forEach(function(x){p[x.type]=x.value});return p}
+function ctDayKey(){var p=ctParts();return p.year+"-"+p.month+"-"+p.day}
+function paceGet(){return _lsGet("xdash_pace",{day:"",count:0,coolUntil:0})}
+function paceSet(v){_lsSet("xdash_pace",v)}
+function paceEnsureDay(){var p=paceGet(),k=ctDayKey();if(p.day!==k){p={day:k,count:0,coolUntil:p.coolUntil||0};paceSet(p)}return p}
+function coolLeftMs(){var p=paceEnsureDay();return Math.max(0,(p.coolUntil||0)-Date.now())}
+function inCooldown(){return coolLeftMs()>0}
+function fmtCool(ms){var s=Math.ceil(ms/1000),m=Math.floor(s/60),r=s%60;return m+":"+(r<10?"0":"")+r}
+function startCooldown(){var p=paceEnsureDay();var mins=10+Math.floor(Math.random()*6);p.coolUntil=Date.now()+mins*60*1000;paceSet(p);paintPace()}
+function bumpReplyCount(){var p=paceEnsureDay();p.count=(p.count||0)+1;paceSet(p);paintPace()}
+function replyCount(){return paceEnsureDay().count||0}
+function hardStopped(){return replyCount()>=30 && !_lsGet("xdash_pace_override",false)}
+function softWarned(){return replyCount()>=25}
+function paintPace(){
+  var p=paceEnsureDay(), left=coolLeftMs(), bar=document.getElementById("paceBar"), day=document.getElementById("paceDay");
+  if(day){
+    var n=p.count||0, cls=n>=30?"pace-hard":(n>=25?"pace-soft":"");
+    day.className="pace-day "+cls;
+    day.textContent="replies today: "+n+" of 25"+(n>=30?" · hard stop (30)":(n>=25?" · soft cap":""));
+  }
+  if(bar){
+    if(left>0){bar.style.display="";bar.innerHTML="⏳ next reply in <b>"+fmtCool(left)+"</b> · likes still ok · good time to post an original 📝"}
+    else{bar.style.display="none"}
+  }
+  var blocked=left>0||hardStopped();
+  document.querySelectorAll("a.replybtn").forEach(function(a){
+    if(a.getAttribute("aria-disabled")==="true"&&a.classList.contains("btn-done"))return;
+    if(blocked){
+      if(!a.getAttribute("data-href")&&a.getAttribute("href"))a.setAttribute("data-href",a.getAttribute("href"));
+      a.removeAttribute("href");
+      a.classList.add("btn-cool");
+      a.setAttribute("aria-disabled","true");
+      if(hardStopped())a.textContent="🛑 daily limit";
+      else a.textContent="⏳ cooldown";
+    }else if(a.classList.contains("btn-cool")){
+      a.classList.remove("btn-cool");
+      var href=a.getAttribute("data-href");
+      if(href&&!itemReplied(a.closest(".bi,.ri,.oi"))){a.setAttribute("href",href);a.textContent="↩️ Post reply";a.removeAttribute("aria-disabled")}
+    }
+  });
+  var warn=document.getElementById("paceWarn");
+  if(warn){
+    if(hardStopped()){warn.style.display="";warn.innerHTML="hard stop at 30 replies today. <a href=\"#\" id=\"paceOverride\">post anyway</a>"}
+    else if(softWarned()){warn.style.display="";warn.textContent="soft cap hit (25). slow down — hard stop at 30."}
+    else warn.style.display="none";
+  }
+}
+function tryReplyGate(el){
+  if(hardStopped()){paintPace();return false}
+  if(inCooldown()){paintPace();return false}
+  return true;
+}
+function onReplyTapPaced(a){
+  var el=a.closest(".bi,.ri,.oi");if(!el)return;
+  if(itemReplied(el))return;
+  if(!tryReplyGate(el)){return}
+  setPending(el.dataset.id,"reply");
+  bumpReplyCount();
+  startCooldown();
+  rememberFrom(el);syncId(el.dataset.id);
+}
+
+
 function onLikeTap(a){var el=a.closest(".bi,.ri,.oi");if(!el)return;setLiked(el.dataset.id,true);setBack(el.dataset.id,false);rememberFrom(el);syncId(el.dataset.id)}
-function onReplyTap(a){var el=a.closest(".bi,.ri,.oi");if(!el)return;if(itemReplied(el))return;setPending(el.dataset.id,"reply");rememberFrom(el);syncId(el.dataset.id)}
+function onReplyTap(a){onReplyTapPaced(a)}
 function onPostTap(a){var el=a.closest(".pc");if(!el)return;if(postIsDone(el))return;setPending(el.dataset.id,"post");rememberFrom(el);syncId(el.dataset.id)}
 function onAnsTap(a){var el=a.closest(".pc");if(!el)return;if(answerIsDone(el))return;setPending(el.dataset.id,"answer");rememberFrom(el);syncId(el.dataset.id)}
 
@@ -375,7 +441,12 @@ document.addEventListener("click",function(e){
     if(u==="full"){setLiked(id,false);setRepliedLocal(id,false);setDone("r",id,false);setDone("o",id,false);setDone("p",id,false);setAnswered(id,false);setPending(id,null);setBack(id,true)}
     rememberFrom(el);syncId(id);return}
   var like=t.closest("a.likebtn");if(like&&!like.getAttribute("aria-disabled"))onLikeTap(like);
-  var reply=t.closest("a.replybtn");if(reply&&!reply.getAttribute("aria-disabled"))onReplyTap(reply);
+  var reply=t.closest("a.replybtn");
+  if(reply&&!reply.getAttribute("aria-disabled")){
+    if(hardStopped()||inCooldown()){e.preventDefault();paintPace();return}
+    onReplyTap(reply);
+  }
+  var ov=t.closest("#paceOverride");if(ov){e.preventDefault();if(confirm("Post more replies today anyway?")){_lsSet("xdash_pace_override",true);paintPace()}return}
   var post=t.closest("a.postbtn");if(post&&!post.getAttribute("aria-disabled"))onPostTap(post);
   var ans=t.closest("a.ansbtn");if(ans&&!ans.getAttribute("aria-disabled"))onAnsTap(ans);
   var item=t.closest(".bi,.pc,.oi,.ri,.hc");if(item)rememberFrom(item);
@@ -412,15 +483,29 @@ setTimeout(pollScan,8000);
     showAns(c,sid);
   });
   document.querySelectorAll("a.sv").forEach(function(a){var i=document.getElementById(a.dataset.img);if(i){a.href=i.src;a.download=a.dataset.name}});
-  resyncAll();showJump();
+  resyncAll();paintPace();showJump();
+ setInterval(paintPace,1000);
 })();
 </script>'''
 
-opps=d.get('opportunities',[])
+opps=sorted([o for o in d.get('opportunities',[]) if not o.get('skip')], key=lambda o:(o.get('priority',9), -(o.get('stats',{}).get('views') or 0)))
+for s in secs:
+    s['replies']=[r for r in s['replies'] if not r.get('skip')]
+secs=sorted(secs,key=lambda s:(-len(s['replies']),-s.get('stats',{}).get('views',0)))
+total=sum(len(s['replies']) for s in secs)
 posts=d.get('posts',[])
 history=d.get('history',[])
 nrep=total
 nhist=len(history)
+from collections import Counter as _Counter
+_alls=[]
+for _s in secs:
+    for _r in _s['replies']:
+        _alls.append((_r['id'],' '.join((_r.get('draft') or '').lower().split()[:3])))
+for _o in opps:
+    _alls.append((_o['id'],' '.join((_o.get('caption') or '').lower().split()[:3])))
+_open_counts=_Counter(o for _,o in _alls if o)
+dup_ids={i for i,o in _alls if _open_counts.get(o,0)>1}
 
 CSS_EXTRA = (
 ".chips{display:flex;gap:6px;flex-wrap:wrap;margin:6px 0}"
@@ -437,6 +522,13 @@ CSS_EXTRA = (
 ".here-tag{display:inline-block;background:#ffd400;color:#0f1419;font-size:12px;font-weight:700;border-radius:99px;padding:2px 8px;margin:0 0 8px}"
 "#jumpLast{position:fixed;bottom:16px;right:16px;z-index:98;background:#ffd400;color:#0f1419;border:0;border-radius:99px;padding:12px 16px;font-size:14px;font-weight:700;box-shadow:0 4px 16px rgba(0,0,0,.45);display:none}"
 "#newDataPill{position:fixed;bottom:16px;left:16px;right:90px;z-index:98;background:#1d9bf0;color:#fff;border:0;border-radius:99px;padding:12px 14px;font-size:14px;font-weight:700;box-shadow:0 4px 16px rgba(0,0,0,.45);display:none}"
+"#paceBar{position:sticky;top:52px;z-index:4;background:#16202a;border:1px solid #ffad1f;color:#ffad1f;border-radius:10px;padding:10px 12px;margin:8px 0;font-size:14px;display:none}"
+".pace-day{background:#16181c;border:1px solid #2f3336;border-radius:10px;padding:8px 12px;margin:8px 0;font-size:14px;color:#e7e9ea}"
+".pace-day.pace-soft{border-color:#ffad1f;color:#ffad1f}.pace-day.pace-hard{border-color:#f4212e;color:#f4212e}"
+"#paceWarn{background:rgba(244,33,46,.12);border:1px solid #f4212e;color:#f4212e;border-radius:10px;padding:8px 12px;margin:8px 0;font-size:14px;display:none}"
+".btn-cool{background:#2f3336!important;color:#8b98a5!important;opacity:.6;pointer-events:none}"
+".dupflag{color:#ffad1f;font-size:12px;font-weight:600}"
+".tipline{color:#8b98a5;font-size:13px;margin:6px 0 10px}"
 ".hc{background:#16202a;border-radius:14px;padding:12px;margin:10px 0;border:0}"
 )
 
@@ -462,7 +554,7 @@ summary{{list-style:none;padding:14px;cursor:pointer}}summary::-webkit-details-m
 .tabs{{display:flex;gap:6px;margin:12px 0;position:sticky;top:0;background:#0f1419;padding:6px 0;z-index:5;flex-wrap:wrap}}.tabs button{{flex:1;min-width:40%;background:#16202a;color:#e7e9ea;border:0;border-radius:12px;padding:10px 8px;font-size:13px;font-weight:600}}.tabs button.on{{background:#1d9bf0}}.ctl{{margin:8px 0}}.ctl button{{background:#2f3336;color:#e7e9ea;border:0;border-radius:99px;padding:6px 12px;margin-right:6px}}
 ''' + CSS_EXTRA + f'''</style></head><body>
 <h1>Reply Dashboard <span class="b">{total} to reply</span></h1><div class="q">🔎 Last scanned X: <b>{E(d.get('last_scanned') or now)}</b> · page built {now}</div><button onclick="location.href=location.pathname+'?r='+Date.now()" style="width:100%;margin:10px 0 0;background:#00ba7c;color:#fff;border:0;border-radius:99px;padding:10px;font-size:16px;font-weight:600">🔄 Refresh</button>
-<div class="ctl"><button onclick="document.querySelectorAll('details').forEach(x=>x.open=true)">Expand all</button><button onclick="document.querySelectorAll('details').forEach(x=>x.open=false)">Collapse all</button></div>''']
+<div class="ctl"><button onclick="document.querySelectorAll('details').forEach(x=>x.open=true)">Expand all</button><button onclick="document.querySelectorAll('details').forEach(x=>x.open=false)">Collapse all</button></div><div class="pace-day" id="paceDay">replies today: …</div><div id="paceWarn"></div><div id="paceBar"></div><div class="tipline">💡 one top-level reply per post, no copy-paste answers. space replies 10–15 min apart.</div>''']
 
 out.append(
  f'<div class="tabs">'
@@ -487,7 +579,7 @@ for o in opps:
         f'<div class="in"><div class="q"><a target="_blank" rel="noopener" href="https://x.com/{o["author"]}/status/{o["id"]}">Open original post ↗</a></div>'
         f'<div class="d"><b>Q:</b> {E(o["question"])}<br><b>A:</b> {E(o["answer"])}</div>{nt}'
         f'<img src="{o["image"]}" style="width:100%;border-radius:10px;background:#fff;margin:8px 0">'
-        f'<div class="d">{E(o["caption"])}</div>{chips(o.get("replied"), o.get("liked"))}'
+        f'<div class="d">{E(o["caption"])}</div>{"<div class=\"dupflag\">⚠️ similar opening to another draft — rewrite before posting</div>" if o["id"] in dup_ids else ""}{chips(o.get("replied"), o.get("liked"))}'
         f'<div class="btn-row"><a target="_blank" rel="noopener" class="btn replybtn" href="{link}" data-href="{link}">↩️ Post reply</a>'
         f'<a target="_blank" rel="noopener" class="btn likebtn" style="flex:0 0 32%;background:#f91880" href="{llink}" data-href="{llink}">❤️ Like</a></div>'
         f'<div class="mdrow"><label><input type="checkbox" class="mdone" onchange="markDone(this,\'o\')"> Mark done</label></div>'
@@ -513,7 +605,7 @@ for bi,b in enumerate(bs,1):
             f'<div class="r bi" data-id="{r["id"]}" data-h="{E(r["handle"])}" data-d="{E(r["draft"].strip())}" data-replied="{rp}" data-liked="{lk}" data-thread="{E(r["thread"])}" data-url="{url}">'
             f'<div class="q">{E(r["thread"])} · 👁 {fmt(r.get("views") or 0)}</div>'
             f'<div class="q"><a target="_blank" rel="noopener" href="{url}">@{E(r["handle"])}</a>: “{E(r["said"])}”</div>'
-            f'<div class="d">{E(r["draft"])}</div>{chips(r.get("replied"), r.get("liked"))}{ver}'
+            f'<div class="d">{E(r["draft"])}</div>{"<div class=\"dupflag\">⚠️ similar opening to another draft — rewrite before posting</div>" if r["id"] in dup_ids else ""}{chips(r.get("replied"), r.get("liked"))}{ver}'
             f'<div class="btn-row">'
             f'<a target="_blank" rel="noopener" class="btn replybtn" href="{rlink}" data-href="{rlink}">↩️ Post reply</a>'
             f'<a target="_blank" rel="noopener" class="btn likebtn" style="flex:0 0 32%;background:#f91880" href="{llink}" data-href="{llink}">❤️ Like</a>'
@@ -545,7 +637,7 @@ for s in secs:
         out.append(
             f'<div class="r ri" data-id="{r["id"]}" data-h="{E(r["handle"])}" data-d="{E(r["draft"].strip())}" data-replied="{rp}" data-liked="{lk}" data-thread="{E(s["title"])}" data-url="{url}">'
             f'<div class="q"><a target="_blank" rel="noopener" href="{url}">@{E(r["handle"])}</a>: “{E(r["said"])}”</div>'
-            f'<div class="d">{E(r["draft"])}</div>{chips(r.get("replied"), r.get("liked"))}'
+            f'<div class="d">{E(r["draft"])}</div>{"<div class=\"dupflag\">⚠️ similar opening to another draft — rewrite before posting</div>" if r["id"] in dup_ids else ""}{chips(r.get("replied"), r.get("liked"))}'
             f'<div class="btn-row"><a target="_blank" rel="noopener" class="btn likebtn" style="flex:0 0 32%;background:#f91880" href="{llink}" data-href="{llink}">❤️ Like</a>'
             f'<a target="_blank" rel="noopener" class="btn replybtn" href="{link}" data-href="{link}">↩️ Post reply</a></div>'
             f'<div class="mdrow"><label><input type="checkbox" class="mdone" onchange="markDone(this,\'r\')"> Mark done</label></div></div>'
