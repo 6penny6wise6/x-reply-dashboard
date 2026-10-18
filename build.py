@@ -586,6 +586,11 @@ def _load_targets():
     return base
 TARGETS=_load_targets(); _TL={h.lower():i for i,h in enumerate(TARGETS)}
 FARM={h.lower() for h in (d.get('farm_blocklist') or [])}
+# code-level guarantee: finished target answers go to the TOP of post_queue.json every build
+try:
+    if _rc.promote_opportunities(d, TARGETS, FARM): print('queue: promoted open opportunity answers')
+except Exception as _e:
+    print('queue promote skipped:', _e)
 RESET=r"""<script>(function(){try{var R=__RESET__;if(!R||!R.v||localStorage.getItem("xdash_reset_v")===R.v)return;
 function g(k){try{return JSON.parse(localStorage.getItem(k)||"{}")||{}}catch(e){return {}}}function s(k,v){localStorage.setItem(k,JSON.stringify(v))}
 var dn=g("xdash_done"),po=g("xdash_posted"),an=g("xdash_answered"),pe=g("xdash_pending"),bk=g("xdash_back");
@@ -616,6 +621,7 @@ paintNow();setInterval(paintNow,2000);
 opps=[o for o in d.get('opportunities',[]) if not o.get('skip') and (o.get('author') or '').lower() not in FARM]
 for o in opps: o['_trank']=_TL.get((o.get('author') or '').lower())
 opps.sort(key=lambda o:(0 if o['_trank'] is not None else 1, o['_trank'] if o['_trank'] is not None else 0, o.get('priority',9), -(o.get('stats',{}).get('views') or 0)))
+_tnow=[o for o in opps if o['_trank'] is not None and not o.get('replied') and o.get('image') and (o.get('caption') or '').strip()]
 for s in secs:
     s['replies']=[r for r in s['replies'] if not r.get('skip')]
 secs=sorted(secs,key=lambda s:(-len(s['replies']),-s.get('stats',{}).get('views',0)))
@@ -665,10 +671,21 @@ CSS_EXTRA = (
 "#nowBar{position:static;background:#1a1f12;border:2px solid #ffd400;border-radius:14px;padding:10px 12px;margin:10px 0;box-shadow:0 6px 18px rgba(0,0,0,.5)}"
 "#nowBar.nownext{border:1px solid #2f3336;background:#16181c;color:#8b98a5;font-size:14px;padding:8px 12px}"
 ".nowh{font-weight:700;font-size:16px;color:#ffd400;margin-bottom:6px}.nowimg{width:100%;max-height:22vh;object-fit:contain;border-radius:10px;background:#fff;margin:6px 0}"
+"#targetNow{background:#0f2a1f;border:2px solid #00ba7c;border-radius:14px;padding:10px 12px;margin:10px 0;box-shadow:0 6px 18px rgba(0,0,0,.5)}#targetNow .nowh{color:#00ba7c}"
 ".dayh{font-size:15px;color:#8b98a5;margin:16px 0 0;font-weight:600}"
 ".ntag{font-size:12px;color:#8b98a5}.revnote{color:#ffad1f;margin:4px 0 8px}"
 )
 
+def _tnow_html():
+    if not _tnow: return ''
+    o=_tnow[0]; more=len(_tnow)-1
+    return (f'<div id="targetNow" data-id="{o["id"]}"><div class="nowh">🎯 post this now: @{E(o["author"])} · {E(o["title"])}</div>'
+            f'<div class="q">top-level answer on a target account. this beats old-thread replies{(" · "+str(more)+" more target pick"+("s" if more>1 else "")+" waiting") if more else ""}</div>'
+            f'<img src="{o["image"]}" class="nowimg"><div class="d">{E(o["caption"])}</div>'
+            f'<div class="btn-row"><button type="button" class="btn" id="tnGo" style="background:#00ba7c">🎯 open it &amp; reply</button></div></div>'
+            '<script>function tnPaint(){var b=document.getElementById("targetNow");if(!b)return;var c=document.querySelector(\'.oi[data-id="\'+b.dataset.id+\'"]\');b.style.display=(!c||itemReplied(c))?"none":""}'
+            'document.addEventListener("click",function(e){if(!e.target.closest||!e.target.closest("#tnGo"))return;var b=document.getElementById("targetNow");var c=document.querySelector(\'.oi[data-id="\'+b.dataset.id+\'"]\');if(!c)return;if(typeof tab==="function")tab(1);c.open=true;applyHere(c);setTimeout(function(){try{c.scrollIntoView({block:"start"})}catch(x){}},60)});'
+            'setInterval(function(){if(typeof itemReplied==="function")tnPaint()},2000);</script>')
 out=[f'''<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <meta http-equiv="refresh" content="120"><meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate"><script>(function(){{var u=new URL(location.href);var r=+u.searchParams.get("r")||0;if(Date.now()-r>60000){{u.searchParams.set("r",Date.now());location.replace(u.toString());}}}})();</script><style>.cd{{background:#16181c;border:1px solid #2f3336;border-radius:10px;padding:8px 12px;margin:8px 0;font-size:14px;color:#71767b}}</style><title>Reply Dashboard ({total})</title>
 <style>body{{font-family:-apple-system,system-ui;background:#0f1419;color:#e7e9ea;padding:16px;max-width:640px;margin:auto}}
@@ -691,7 +708,7 @@ summary{{list-style:none;padding:14px;cursor:pointer}}summary::-webkit-details-m
 .tabs{{display:flex;gap:6px;margin:12px 0;position:sticky;top:0;background:#0f1419;padding:6px 0;z-index:5;flex-wrap:wrap}}.tabs button{{flex:1;min-width:40%;background:#16202a;color:#e7e9ea;border:0;border-radius:12px;padding:10px 8px;font-size:13px;font-weight:600}}.tabs button.on{{background:#1d9bf0}}.ctl{{margin:8px 0}}.ctl button{{background:#2f3336;color:#e7e9ea;border:0;border-radius:99px;padding:6px 12px;margin-right:6px}}
 ''' + CSS_EXTRA + f'''</style></head><body>
 <h1>Reply Dashboard <span class="b">{total} to reply</span></h1><div class="q">🔎 Last scanned X: <b>{E(d.get('last_scanned') or now)}</b> · page built {now}</div><button onclick="location.href=location.pathname+'?r='+Date.now()" style="width:100%;margin:10px 0 0;background:#00ba7c;color:#fff;border:0;border-radius:99px;padding:10px;font-size:16px;font-weight:600">🔄 Refresh</button>
-<div class="ctl"><button onclick="document.querySelectorAll('details').forEach(x=>x.open=true)">Expand all</button><button onclick="document.querySelectorAll('details').forEach(x=>x.open=false)">Collapse all</button></div><div class="pace-day" id="paceDay">replies today: …</div><div id="paceWarn"></div><div id="paceBar"></div><div class="tipline">💡 one top-level reply per post, no copy-paste answers. viral replies 10–15 min apart, thread replies 3–5 min. timers start once a reply is confirmed.</div><div id="laGlobal" class="likeall-msg q" style="display:none"></div>''']
+<div class="ctl"><button onclick="document.querySelectorAll('details').forEach(x=>x.open=true)">Expand all</button><button onclick="document.querySelectorAll('details').forEach(x=>x.open=false)">Collapse all</button></div><div class="pace-day" id="paceDay">replies today: …</div><div id="paceWarn"></div><div id="paceBar"></div><div class="tipline">💡 one top-level reply per post, no copy-paste answers. viral replies 10–15 min apart, thread replies 3–5 min. timers start once a reply is confirmed.</div>'''+_tnow_html()+'''<div id="laGlobal" class="likeall-msg q" style="display:none"></div>''']
 
 out.append(
  f'<div class="tabs">'

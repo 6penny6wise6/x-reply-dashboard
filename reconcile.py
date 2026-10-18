@@ -383,6 +383,81 @@ def match_posts(dash, st=None, min_sim=0.72):
         mark(p, oid, f'text {sc:.2f}')
     return out
 
+# ---------- target-account answers jump the queue ----------
+LOOKALIKES = Path('/workspace/x-growth/atensnut_lookalikes.md')
+BASE_TARGETS = ['its_The_Dr', 'DavidLimbaugh', 'atensnut', 'TONYxTWO', 'CynicalPublius']
+
+def load_targets():
+    base = list(BASE_TARGETS)
+    try:
+        txt = LOOKALIKES.read_text()
+        sec = txt.split('## 3.')[1].split('## 4.')[0] if '## 3.' in txt else ''
+        for h in re.findall(r'\[@([A-Za-z0-9_]+)\]', sec):
+            if h not in base: base.append(h)
+    except Exception:
+        pass
+    return base
+
+PRI_ORDER = {'target_now': 0, 'toplevel': 1}
+
+def promote_opportunities(dash, targets=None, farm=None):
+    """Code-level guarantee: every open opportunity with a finished answer (caption + image)
+    is in post_queue.json. Target-account picks get priority 'target_now' and sit at the very top,
+    other top-level picks get 'toplevel' right below them, ahead of old-thread replies.
+    Answered ones (reconcile saw his reply) are marked posted. Returns number of queue changes."""
+    tl = {h.lower(): i for i, h in enumerate(targets or load_targets())}
+    farm = {h.lower().lstrip('@') for h in (farm if farm is not None else (dash.get('farm_blocklist') or []))}
+    pm = replied_parents()
+    try: q = json.loads(QUEUE.read_text())
+    except Exception: return 0
+    if not isinstance(q, list): return 0
+    before = json.dumps(q, ensure_ascii=False)
+    by_parent = {}
+    for it in q:
+        tu = it.get('target_url') or ''
+        if it.get('kind') == 'reply' and '/status/' in tu:
+            by_parent.setdefault(tu.rstrip('/').split('/')[-1], []).append(it)
+    now = dt.datetime.now(dt.timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')
+    for o in dash.get('opportunities') or []:
+        oid = str(o.get('id') or ''); a = (o.get('author') or '').lower().lstrip('@')
+        if not oid or o.get('skip') or a in farm: continue
+        if not ((o.get('caption') or '').strip() and o.get('image')): continue
+        info = pm.get(oid); replied = bool(o.get('replied') or info)
+        pri = 'target_now' if a in tl else 'toplevel'
+        items = by_parent.get(oid) or []
+        if replied:
+            for it in items:
+                if it.get('status') == 'pending':
+                    it['status'] = 'posted'; it.pop('priority', None)
+                    mid = (info or {}).get('my_reply_id') or o.get('my_reply_id')
+                    if mid: it['url'] = f'https://x.com/MrDonnieJackson/status/{mid}'
+                    it['posted_at'] = (info or {}).get('replied_at') or o.get('replied_at') or now
+            continue
+        live = [it for it in items if it.get('status') == 'pending']
+        if live:
+            for it in live:
+                it['priority'] = pri; it['target_rank'] = tl.get(a)
+                it['text'] = o['caption'].strip(); it['image'] = '/workspace/x-dashboard/' + o['image']
+            continue
+        if items: continue  # posted / skipped before: leave alone
+        q.append({'seq': 0, 'kind': 'reply', 'target_url': f'https://x.com/i/status/{oid}', 'handle': o.get('author'),
+                  'text': o['caption'].strip(), 'image': '/workspace/x-dashboard/' + o['image'], 'status': 'pending',
+                  'priority': pri, 'target_rank': tl.get(a), 'views': (o.get('stats') or {}).get('views', 0),
+                  'source': 'opportunity: ' + (o.get('title') or ''), 'like_parent': True, 'queued_at': now})
+    def key(ix):
+        i, it = ix
+        p = PRI_ORDER.get(it.get('priority')) if it.get('status') == 'pending' else None
+        if p is None: return (2, 0, i)
+        return (p, it.get('target_rank') if it.get('target_rank') is not None else 99, i)
+    q = [it for _, it in sorted(enumerate(q), key=key)]
+    for n, it in enumerate(q, 1):
+        if it.get('status') != 'pending' or not it.get('priority'): it.pop('priority', None) if it.get('status') != 'pending' else None
+        it['seq'] = n
+    after = json.dumps(q, ensure_ascii=False)
+    if after == before: return 0
+    tmp = QUEUE.with_suffix('.tmp'); tmp.write_text(json.dumps(q, ensure_ascii=False, indent=1) + '\n'); os.replace(tmp, QUEUE)
+    return 1
+
 def _apply_cli():
     pm = replied_parents()
     dash = json.loads(DASH.read_text())
@@ -391,7 +466,9 @@ def _apply_cli():
     DASH.write_text(json.dumps(dash, ensure_ascii=False, indent=1) + '\n')
     qn = mark_queue(pm)
     qp = mark_queue_posts(dash)
+    pq = promote_opportunities(dash)
     print(f'parents_known={len(pm)} newly_marked_replied={marked} moved_to_history={moved} queue_marked_already_replied={qn}')
+    print(f'queue_promoted_changes={pq}')
     print(f'originals_known={len(load_state().get("originals") or {})} posts_newly_marked_posted={len(pmk)} queue_posts_marked={qp}')
     for pid, oid, how in pmk: print(f'  posted: {pid} -> https://x.com/MrDonnieJackson/status/{oid} ({how})')
     return 0
