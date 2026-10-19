@@ -622,7 +622,18 @@ SKIP_IDS={str(x) for x in (d.get('skip_ids') or [])}
 opps=[o for o in d.get('opportunities',[]) if not o.get('skip') and str(o.get('id')) not in SKIP_IDS and (o.get('author') or '').lower() not in FARM]
 for o in opps: o['_trank']=_TL.get((o.get('author') or '').lower())
 opps.sort(key=lambda o:(0 if o['_trank'] is not None else 1, o['_trank'] if o['_trank'] is not None else 0, o.get('priority',9), -(o.get('stats',{}).get('views') or 0)))
-_tnow=[o for o in opps if o['_trank'] is not None and not o.get('replied') and o.get('image') and (o.get('caption') or '').strip()]
+def _queue_blocked():
+    # parents whose queue entries are held_* / skipped_* (and none pending): never banner them
+    try: _q=json.load(open(os.environ.get('XDASH_QUEUE') or 'post_queue.json'))
+    except Exception: return set()
+    st={}
+    for _i in _q if isinstance(_q,list) else []:
+        _tu=_i.get('target_url') or ''
+        if _i.get('kind')=='reply' and '/status/' in _tu: st.setdefault(_tu.rstrip('/').split('/')[-1],[]).append(str(_i.get('status') or ''))
+    return {k for k,v in st.items() if 'pending' not in v and any(x.startswith(('held_','skipped_')) for x in v)}
+import os
+_QBLOCK=_queue_blocked()
+_tnow=[o for o in opps if o['_trank'] is not None and not o.get('replied') and str(o['id']) not in _QBLOCK and o.get('image') and (o.get('caption') or '').strip()]
 for s in secs:
     s['replies']=[r for r in s['replies'] if not r.get('skip')]
 secs=sorted(secs,key=lambda s:(-len(s['replies']),-s.get('stats',{}).get('views',0)))
