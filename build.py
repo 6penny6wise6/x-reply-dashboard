@@ -599,7 +599,7 @@ s("xdash_done",dn);s("xdash_posted",po);s("xdash_answered",an);s("xdash_pending"
 NOWJS=r"""<script>
 function ctNowMin(){var p=ctParts();return {day:p.year+"-"+p.month+"-"+p.day,m:(+p.hour%24)*60+(+p.minute)}}
 function paintNow(){var bar=document.getElementById("nowBar");if(!bar)return;var n=ctNowMin(),due=null,next=null;
- document.querySelectorAll(".pc").forEach(function(c){if(c.dataset.day!==n.day||postIsDone(c))return;var pend=itemPending(c);var sl=+c.dataset.slot;if(isNaN(sl)||sl>=9999)return;
+ document.querySelectorAll(".pc").forEach(function(c){if(c.dataset.day!==n.day||postIsDone(c))return;var qs=(c.dataset.q||"");if(qs&&qs.split(",").indexOf("pending")<0&&/(^|,)(held_|skipped_)/.test(qs))return;var pend=itemPending(c);var sl=+c.dataset.slot;if(isNaN(sl)||sl>=9999)return;
   if(sl<=n.m){if(!due)due=c}else if(!next)next=c});
  var key=due?("d"+due.dataset.id+(itemPending(due)?"p":"")):next?("n"+next.dataset.id):"x";if(bar.dataset.k===key)return;bar.dataset.k=key;
  if(due){var img=due.querySelector("img"),pa=due.querySelector("a.postbtn");var href=pa?(pa.getAttribute("data-href")||pa.getAttribute("href")):"#";var pend=itemPending(due);
@@ -619,7 +619,13 @@ function bar_reset(){var nb=document.getElementById("nowBar");if(nb)nb.dataset.k
 paintNow();setInterval(paintNow,2000);
 </script>"""
 SKIP_IDS={str(x) for x in (d.get('skip_ids') or [])}
-opps=[o for o in d.get('opportunities',[]) if not o.get('skip') and str(o.get('id')) not in SKIP_IDS and (o.get('author') or '').lower() not in FARM]
+try: _QSM=_rc.queue_status_map()
+except Exception: _QSM={}
+def _opp_hidden(o):
+    i=str(o.get('id'))
+    return bool(o.get('skip') or str(o.get('skip_status') or '').startswith('skipped') or i in SKIP_IDS
+                or any(x.startswith('skipped_face') for x in _QSM.get(i,[])))
+opps=[o for o in d.get('opportunities',[]) if not _opp_hidden(o) and (o.get('author') or '').lower() not in FARM]
 for o in opps: o['_trank']=_TL.get((o.get('author') or '').lower())
 opps.sort(key=lambda o:(0 if o['_trank'] is not None else 1, o['_trank'] if o['_trank'] is not None else 0, o.get('priority',9), -(o.get('stats',{}).get('views') or 0)))
 def _queue_blocked():
@@ -860,7 +866,7 @@ for p in sorted(posts,key=lambda p:(_pday(p),ptm(p),p.get('created_ms',0))):
     P.append(
         f'<div class="r pc" style="background:#16202a;border-radius:14px;padding:14px;margin:12px 0;border:0" '
         f'data-id="{E(p["id"])}" data-t="{E(p["text"].strip())}" data-img="{E(absimg)}" '
-        f'data-ans="{E(ans_text)}" data-posted="{posted}" data-day="{E(_pday(p))}" data-sday="{E(datetime.date.fromisoformat(_pday(p)).strftime('%a %b %-d'))}" data-slot="{ptm(p)}" data-title="{E(p["title"])}" data-ptime="{E(p.get("post_time") or "")}">'
+        f'data-ans="{E(ans_text)}" data-posted="{posted}" data-q="{E(",".join(_QSM.get(str(p["id"]),[])))}" data-day="{E(_pday(p))}" data-sday="{E(datetime.date.fromisoformat(_pday(p)).strftime('%a %b %-d'))}" data-slot="{ptm(p)}" data-title="{E(p["title"])}" data-ptime="{E(p.get("post_time") or "")}">'
         f'<div style="display:flex;justify-content:space-between;align-items:center;font-weight:600;font-size:17px"><span class="tt">{E(p["title"])}</span>{pt}</div>'
         f'{im}<div class="d">{E(p["text"])}</div>{nt}{ans_block}'
         f'<div class="btn-row">'

@@ -286,6 +286,8 @@ def apply_saved(dash):
     st = load_state()
     r = apply(dash, replied_parents(st))
     match_posts(dash, st)
+    mark_queue_posts(dash)
+    enqueue_scheduled_posts(dash)
     return r
 
 def mark_queue_posts(dash):
@@ -463,6 +465,54 @@ def promote_opportunities(dash, targets=None, farm=None):
     tmp = QUEUE.with_suffix('.tmp'); tmp.write_text(json.dumps(q, ensure_ascii=False, indent=1) + '\n'); os.replace(tmp, QUEUE)
     return 1
 
+# ---------- scheduled originals always land in the queue ----------
+def _today_ct():
+    return (dt.datetime.now(CT) if CT else dt.datetime.now(dt.timezone.utc)).date().isoformat()
+
+def enqueue_scheduled_posts(dash):
+    """Every unposted dashboard original scheduled for today or later gets a queue entry
+    (kind post, status pending, slot_date + scheduled_ct from the dashboard schedule).
+    Never duplicates (one entry per post_key), never touches posted/held_*/skipped_* entries;
+    pending entries get their slot synced to the dashboard schedule. Returns number of changes."""
+    try: q = json.loads(QUEUE.read_text())
+    except Exception: return 0
+    if not isinstance(q, list): return 0
+    today = _today_ct(); n = 0
+    by_key = {}
+    for it in q:
+        if it.get('kind') == 'post' and it.get('post_key'): by_key.setdefault(it['post_key'], []).append(it)
+    for p in dash.get('posts') or []:
+        k = p.get('id'); day = p.get('slot_date') or today
+        if not k or p.get('posted_id') or day < today: continue
+        lab = dt.date.fromisoformat(day).strftime('%a %b %-d'); t = p.get('post_time') or ''
+        items = by_key.get(k) or []
+        if any(it.get('status') == 'posted' for it in items): continue
+        pend = [it for it in items if it.get('status') == 'pending']
+        if items and not pend: continue   # held_* / skipped_*: leave alone
+        for it in pend:
+            if (it.get('slot_date'), it.get('scheduled_ct')) != (day, t):
+                it.update(slot_date=day, scheduled_date=lab, scheduled_ct=t, est_slot_ct=t); n += 1
+        if not items:
+            q.append({'seq': max([i.get('seq', 0) for i in q] or [0]) + 1, 'kind': 'post', 'target_url': None, 'handle': 'MrDonnieJackson',
+                      'text': p.get('text', ''), 'image': ('/workspace/x-dashboard/' + p['image']) if p.get('image') else None,
+                      'status': 'pending', 'scheduled_ct': t, 'est_slot_ct': t, 'post_key': k, 'slot_date': day, 'scheduled_date': lab,
+                      'caption_structure': p.get('caption_structure'), 'image_layout': p.get('image_layout'),
+                      'note': 'auto-enqueued from the dashboard schedule'}); n += 1
+    if n:
+        tmp = QUEUE.with_suffix('.tmp'); tmp.write_text(json.dumps(q, ensure_ascii=False, indent=1) + '\n'); os.replace(tmp, QUEUE)
+    return n
+
+def queue_status_map():
+    """post_key / parent id -> list of queue statuses"""
+    try: q = json.loads(QUEUE.read_text())
+    except Exception: return {}
+    m = {}
+    for it in q if isinstance(q, list) else []:
+        tu = it.get('target_url') or ''
+        k = it.get('post_key') if it.get('kind') == 'post' else (tu.rstrip('/').split('/')[-1] if '/status/' in tu else None)
+        if k: m.setdefault(str(k), []).append(str(it.get('status') or ''))
+    return m
+
 def _apply_cli():
     pm = replied_parents()
     dash = json.loads(DASH.read_text())
@@ -472,8 +522,9 @@ def _apply_cli():
     qn = mark_queue(pm)
     qp = mark_queue_posts(dash)
     pq = promote_opportunities(dash)
+    eq = enqueue_scheduled_posts(dash)
     print(f'parents_known={len(pm)} newly_marked_replied={marked} moved_to_history={moved} queue_marked_already_replied={qn}')
-    print(f'queue_promoted_changes={pq}')
+    print(f'queue_promoted_changes={pq} scheduled_posts_enqueued_or_synced={eq}')
     print(f'originals_known={len(load_state().get("originals") or {})} posts_newly_marked_posted={len(pmk)} queue_posts_marked={qp}')
     for pid, oid, how in pmk: print(f'  posted: {pid} -> https://x.com/MrDonnieJackson/status/{oid} ({how})')
     return 0
