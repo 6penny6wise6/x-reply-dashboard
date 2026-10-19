@@ -418,8 +418,13 @@ def promote_opportunities(dash, targets=None, farm=None):
         if it.get('kind') == 'reply' and '/status/' in tu:
             by_parent.setdefault(tu.rstrip('/').split('/')[-1], []).append(it)
     now = dt.datetime.now(dt.timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')
+    skip_ids = {str(x) for x in (dash.get('skip_ids') or [])}
     for o in dash.get('opportunities') or []:
         oid = str(o.get('id') or ''); a = (o.get('author') or '').lower().lstrip('@')
+        if oid in skip_ids:  # never queue, and pull any pending queue entry
+            for it in by_parent.get(oid) or []:
+                if it.get('status') == 'pending': it['status'] = o.get('skip_status') or 'skipped_skip_list'; it.pop('priority', None)
+            continue
         if not oid or o.get('skip') or a in farm: continue
         if not ((o.get('caption') or '').strip() and o.get('image')): continue
         info = pm.get(oid); replied = bool(o.get('replied') or info)

@@ -618,7 +618,8 @@ document.addEventListener("click",function(e){var a=e.target&&e.target.closest&&
 function bar_reset(){var nb=document.getElementById("nowBar");if(nb)nb.dataset.k=""}
 paintNow();setInterval(paintNow,2000);
 </script>"""
-opps=[o for o in d.get('opportunities',[]) if not o.get('skip') and (o.get('author') or '').lower() not in FARM]
+SKIP_IDS={str(x) for x in (d.get('skip_ids') or [])}
+opps=[o for o in d.get('opportunities',[]) if not o.get('skip') and str(o.get('id')) not in SKIP_IDS and (o.get('author') or '').lower() not in FARM]
 for o in opps: o['_trank']=_TL.get((o.get('author') or '').lower())
 opps.sort(key=lambda o:(0 if o['_trank'] is not None else 1, o['_trank'] if o['_trank'] is not None else 0, o.get('priority',9), -(o.get('stats',{}).get('views') or 0)))
 _tnow=[o for o in opps if o['_trank'] is not None and not o.get('replied') and o.get('image') and (o.get('caption') or '').strip()]
