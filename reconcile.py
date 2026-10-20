@@ -325,6 +325,7 @@ def mark_queue(pm):
 # ---------- his ORIGINAL posts -> dashboard 'posts' ----------
 def norm_text(t):
     t = re.sub(r'https?://\S+', ' ', (t or '').lower())
+    t = re.sub(r'(?<!\w)#\w+', ' ', t)  # hashtags never decide a match
     t = ''.join(ch if (ch.isalnum() or ch in '+-−×÷/=()½%.,?\'') else ' ' for ch in t)
     return ' '.join(t.split())
 
