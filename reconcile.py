@@ -36,8 +36,9 @@ TIMELINE FLOW (preferred, every run, FREE `x` namespace only):
   3) python3 reconcile.py apply
        marks dashboard.json items replied from the saved set
        (reconcile_data/replied_set.json) plus posted replies in post_queue.json,
-       and marks queue replies whose parent was already answered as
-       status "skipped_already_replied".
+       and marks queue replies whose parent he answered: "posted" (with the real
+       reply url/time) when he replied after it was queued, otherwise
+       "skipped_already_replied".
 build.py also applies the saved set + post_queue on every build (no X reads).
 """
 from __future__ import annotations
@@ -304,19 +305,44 @@ def mark_queue_posts(dash):
         tmp = QUEUE.with_suffix('.tmp'); tmp.write_text(json.dumps(q, ensure_ascii=False, indent=1) + '\n'); os.replace(tmp, QUEUE)
     return n
 
+def _ct_label(iso):
+    """'2026-10-20T11:58:05.000Z' -> '2026-10-20 6:58 AM CT' (America/Chicago)."""
+    try:
+        from zoneinfo import ZoneInfo
+        t = dt.datetime.fromisoformat(iso.replace('Z', '+00:00')).astimezone(ZoneInfo('America/Chicago'))
+        return t.strftime('%Y-%m-%d ') + t.strftime('%I:%M %p').lstrip('0') + ' CT'
+    except Exception:
+        return iso or ''
+
 def mark_queue(pm):
+    """Queue replies whose parent he has answered.
+    Answered AFTER it was queued (he posted it from the dashboard) -> status 'posted' with the real
+    reply url/time. Answered BEFORE it was queued -> 'skipped_already_replied'."""
     try:
         q = json.loads(QUEUE.read_text())
     except Exception:
         return 0
     n = 0
     for it in q if isinstance(q, list) else []:
-        if it.get('kind') != 'reply' or it.get('status') != 'pending': continue
+        st = it.get('status')
+        if it.get('kind') != 'reply' or st not in ('pending', 'skipped_already_replied'): continue
         tu = it.get('target_url') or ''
         pid = tu.rstrip('/').split('/')[-1] if '/status/' in tu else ''
-        if pid in pm:
+        info = pm.get(pid)
+        if not info: continue
+        rid, rat = info.get('my_reply_id') or '', info.get('replied_at') or ''
+        qat = it.get('queued_at') or ''
+        if rid and rat and qat and rat >= qat:
+            it['status'] = 'posted'
+            it['url'] = f'https://x.com/MrDonnieJackson/status/{rid}'
+            it['posted_id'] = rid
+            it['posted_at'] = _ct_label(rat)
+            it['note'] = re.sub(r'\s*\|?\s*already replied \([^)]*\)', '', it.get('note') or '').strip(' |')
+            it['note'] = (it['note'] + ' | posted, confirmed on his timeline by reconcile').strip(' |')
+            n += 1
+        elif st == 'pending':
             it['status'] = 'skipped_already_replied'
-            it['note'] = ((it.get('note') or '') + f" | already replied ({pm[pid].get('my_reply_id') or 'see timeline'})").strip(' |')
+            it['note'] = ((it.get('note') or '') + f" | already replied ({rid or 'see timeline'})").strip(' |')
             n += 1
     if n:
         tmp = QUEUE.with_suffix('.tmp'); tmp.write_text(json.dumps(q, ensure_ascii=False, indent=1) + '\n'); os.replace(tmp, QUEUE)
