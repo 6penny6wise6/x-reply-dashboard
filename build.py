@@ -623,8 +623,9 @@ function resort(){var now=Date.now(),all=items();all.forEach(function(e){paint(e
     bx.forEach(function(b,bi){var ref=b.querySelector(":scope > button.btn-sec");for(var j=0;j<slots[bi]&&k<bl.length;j++,k++)b.insertBefore(bl[k],ref)});
     while(k<bl.length){bx[bx.length-1].insertBefore(bl[k],bx[bx.length-1].querySelector(":scope > button.btn-sec"));k++}
     if(typeof updProg==="function")bx.forEach(function(b){updProg(b.parentNode)})}
+  if(typeof tnPaint==="function")tnPaint();
 }
-window.staleResort=resort;
+window.staleResort=function(){resort()};
 document.addEventListener("click",function(e){var b=e.target&&e.target.closest&&e.target.closest(".pinbtn");if(!b)return;e.preventDefault();e.stopPropagation();
   var el=b.closest(".oi,.bi,.ri");if(!el)return;var m=pins(),id=el.dataset.id;if(isPin(el)){if(el.dataset.pin==="1")m[id]=0;else delete m[id]}else m[id]=1;_lsSet("xdash_pinned",m);resort();
   if(el.scrollIntoView)el.scrollIntoView({block:"center"})},true);
@@ -753,11 +754,18 @@ CSS_EXTRA = (
 def _tnow_html():
     if not _tnow: return ''
     o=_tnow[0]; more=len(_tnow)-1
-    return (f'<div id="targetNow" data-id="{o["id"]}"><div class="nowh">🎯 post this now: @{E(o["author"])} · {E(o["title"])}</div>'
-            f'<div class="q">top-level answer on a target account. this beats old-thread replies{(" · "+str(more)+" more target pick"+("s" if more>1 else "")+" waiting") if more else ""}</div>'
+    return (f'<div id="targetNow" style="display:none" data-id="{o["id"]}" data-c="{",".join(str(x["id"]) for x in _tnow)}"><div class="nowh">🎯 post this now: @{E(o["author"])} · {E(o["title"])}</div>'
+            f'<div class="q">top-level answer on a target account. this beats old-thread replies<span class="tnmore">{(" · "+str(more)+" more target pick"+("s" if more>1 else "")+" waiting") if more else ""}</span></div>'
             f'<img src="{o["image"]}" class="nowimg"><div class="d">{E(o["caption"])}</div>'
             f'<div class="btn-row"><button type="button" class="btn" id="tnGo" style="background:#00ba7c">🎯 open it &amp; reply</button></div></div>'
-            '<script>function tnPaint(){var b=document.getElementById("targetNow");if(!b)return;var c=document.querySelector(\'.oi[data-id="\'+b.dataset.id+\'"]\');b.style.display=(!c||itemReplied(c))?"none":""}'
+            '<script>/* first unreplied target pick that is fresh (parent <=2h) or pinned; none -> hide */'
+            'function tnPaint(){var b=document.getElementById("targetNow");if(!b)return;var pick=null,left=0;'
+            '(b.dataset.c||"").split(",").forEach(function(i){var c=i&&document.querySelector(\'.oi[data-id="\'+i+\'"]\');if(!c||(typeof itemReplied==="function"&&itemReplied(c)))return;'
+            'var f=c.dataset.fresh?c.dataset.fresh==="1":(!c.dataset.ts||Date.now()-c.dataset.ts<=7200000||c.dataset.pin==="1");if(!f)return;if(!pick)pick=c;else left++});'
+            'if(!pick){b.style.display="none";return}b.style.display="";'
+            'if(b.dataset.id!==pick.dataset.id){b.dataset.id=pick.dataset.id;b.querySelector(".nowh").textContent="🎯 post this now: @"+pick.dataset.h+" · "+pick.dataset.thread;'
+            'var im=b.querySelector(".nowimg"),pi=pick.querySelector(".in img");if(im){if(pi){im.src=pi.src;im.style.display=""}else im.style.display="none"}b.querySelector(".d").textContent=pick.dataset.d||""}'
+            'var m=b.querySelector(".tnmore");if(m)m.textContent=left?" · "+left+" more target pick"+(left>1?"s":"")+" waiting":""}'
             'document.addEventListener("click",function(e){if(!e.target.closest||!e.target.closest("#tnGo"))return;var b=document.getElementById("targetNow");var c=document.querySelector(\'.oi[data-id="\'+b.dataset.id+\'"]\');if(!c)return;if(typeof tab==="function")tab(1);c.open=true;applyHere(c);setTimeout(function(){try{c.scrollIntoView({block:"start"})}catch(x){}},60)});'
             'setInterval(function(){if(typeof itemReplied==="function")tnPaint()},2000);</script>')
 out=[f'''<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
