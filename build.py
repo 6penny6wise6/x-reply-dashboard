@@ -596,6 +596,43 @@ function g(k){try{return JSON.parse(localStorage.getItem(k)||"{}")||{}}catch(e){
 var dn=g("xdash_done"),po=g("xdash_posted"),an=g("xdash_answered"),pe=g("xdash_pending"),bk=g("xdash_back");
 (R.ids||[]).forEach(function(id){delete dn["p:"+id];delete po[id];delete an[id];delete pe[id];delete bk[id]});
 s("xdash_done",dn);s("xdash_posted",po);s("xdash_answered",an);s("xdash_pending",pe);s("xdash_back",bk);localStorage.setItem("xdash_reset_v",R.v)}catch(e){}})();</script>"""
+STALEJS=r"""<script>
+/* reply items whose parent post is over 2h old: label "stale · Xh old" and sort below fresh ones.
+   📌 Pin keeps an item in the fresh group (xdash_pinned; 1 pinned, 0 unpinned overrides a queue pin). */
+(function(){var H2=7200000,seq=0;
+function pins(){return _lsGet("xdash_pinned",{})}
+function isPin(el){var v=pins()[el.dataset.id];return v===1||(v!==0&&el.dataset.pin==="1")}
+function items(){return [].slice.call(document.querySelectorAll(".oi[data-ts],.bi[data-ts],.ri[data-ts]"))}
+function paint(el,now){
+  if(el.dataset.o===undefined)el.dataset.o=String(seq++);
+  var oi=el.classList.contains("oi"),age=now-(+el.dataset.ts),st=age>H2,pn=isPin(el);
+  var lab=el.querySelector(".stalelab"),btn=el.querySelector(".pinbtn");
+  if(!lab){lab=document.createElement("span");lab.className="stalelab";var h=oi?el.querySelector("summary .t"):el.querySelector(".q");if(h)h.appendChild(lab)}
+  if(!btn){btn=document.createElement("button");btn.type="button";btn.className="pinbtn";var r=oi?el.querySelector("summary .t"):el.querySelector(".mdrow");if(r)r.appendChild(btn)}
+  lab.textContent=st?"stale · "+Math.floor(age/3600000)+"h old":"";
+  btn.textContent=pn?"📌 Pinned":"📌 Pin";btn.className="pinbtn"+(pn?" on":"");
+  el.classList.toggle("stale",st&&!pn);el.dataset.fresh=(!st||pn)?"1":"0";
+}
+function ordered(list){return list.slice().sort(function(a,b){return (b.dataset.fresh-a.dataset.fresh)||(a.dataset.o-b.dataset.o)})}
+function resort(){var now=Date.now(),all=items();all.forEach(function(e){paint(e,now)});
+  var ol=document.getElementById("oppList");if(ol)ordered([].slice.call(ol.querySelectorAll(":scope > .oi[data-ts]"))).forEach(function(e){ol.appendChild(e)});
+  [].slice.call(document.querySelectorAll("details:not(.batch):not(.oi) > .in")).forEach(function(sc){var l=[].slice.call(sc.querySelectorAll(":scope > .ri[data-ts]"));if(l.length>1)ordered(l).forEach(function(e){sc.appendChild(e)})});
+  var bx=[].slice.call(document.querySelectorAll("details.batch > .in"));if(bx.length){
+    var slots=bx.map(function(b){if(b.dataset.n===undefined)b.dataset.n=String(b.querySelectorAll(":scope > .bi").length);return +b.dataset.n});
+    var bl=ordered([].slice.call(document.querySelectorAll("details.batch > .in > .bi[data-ts]"))),k=0;
+    bx.forEach(function(b,bi){var ref=b.querySelector(":scope > button.btn-sec");for(var j=0;j<slots[bi]&&k<bl.length;j++,k++)b.insertBefore(bl[k],ref)});
+    while(k<bl.length){bx[bx.length-1].insertBefore(bl[k],bx[bx.length-1].querySelector(":scope > button.btn-sec"));k++}
+    if(typeof updProg==="function")bx.forEach(function(b){updProg(b.parentNode)})}
+}
+window.staleResort=resort;
+document.addEventListener("click",function(e){var b=e.target&&e.target.closest&&e.target.closest(".pinbtn");if(!b)return;e.preventDefault();e.stopPropagation();
+  var el=b.closest(".oi,.bi,.ri");if(!el)return;var m=pins(),id=el.dataset.id;if(isPin(el)){if(el.dataset.pin==="1")m[id]=0;else delete m[id]}else m[id]=1;_lsSet("xdash_pinned",m);resort();
+  if(el.scrollIntoView)el.scrollIntoView({block:"center"})},true);
+try{resort()}catch(e){}
+document.addEventListener("visibilitychange",function(){if(!document.hidden)try{resort()}catch(e){}});
+setInterval(function(){var now=Date.now();items().forEach(function(e){paint(e,now)})},60000);
+})();
+</script>"""
 NOWJS=r"""<script>
 function ctNowMin(){var p=ctParts();return {day:p.year+"-"+p.month+"-"+p.day,m:(+p.hour%24)*60+(+p.minute)}}
 function paintNow(){var bar=document.getElementById("nowBar");if(!bar)return;var n=ctNowMin(),due=null,next=null;
@@ -639,6 +676,22 @@ def _queue_blocked():
     return {k for k,v in st.items() if 'pending' not in v and any(x.startswith(('held_','skipped_')) for x in v)}
 import os
 _QBLOCK=_queue_blocked()
+def _queue_pins():
+    # reply targets with pinned: true in post_queue.json stay in the fresh group
+    try: _q=json.load(open(os.environ.get('XDASH_QUEUE') or 'post_queue.json'))
+    except Exception: return set()
+    return {(_i.get('target_url') or '').rstrip('/').split('/')[-1] for _i in _q if isinstance(_i,dict) and _i.get('kind')=='reply' and _i.get('pinned') is True and '/status/' in (_i.get('target_url') or '')}
+_QPIN=_queue_pins()
+def _tsms(item, id_key='id'):
+    # parent post time (ms) from created_at, else from the X snowflake id
+    ca=item.get('created_at') or item.get('posted_at_iso')
+    if ca:
+        try: return int(datetime.datetime.fromisoformat(str(ca).replace('Z','+00:00')).timestamp()*1000)
+        except Exception: pass
+    i=str(item.get(id_key) or '')
+    return ((int(i)>>22)+1288834974657) if i.isdigit() and len(i)>=15 else 0
+def _agea(item):
+    t=_tsms(item); return (f' data-ts="{t}"' if t else '')+(' data-pin="1"' if str(item.get('id')) in _QPIN else '')
 _tnow=[o for o in opps if o['_trank'] is not None and not o.get('replied') and str(o['id']) not in _QBLOCK and o.get('image') and (o.get('caption') or '').strip()]
 for s in secs:
     s['replies']=[r for r in s['replies'] if not r.get('skip')]
@@ -691,6 +744,9 @@ CSS_EXTRA = (
 ".nowh{font-weight:700;font-size:16px;color:#ffd400;margin-bottom:6px}.nowimg{width:100%;max-height:22vh;object-fit:contain;border-radius:10px;background:#fff;margin:6px 0}"
 "#targetNow{background:#0f2a1f;border:2px solid #00ba7c;border-radius:14px;padding:10px 12px;margin:10px 0;box-shadow:0 6px 18px rgba(0,0,0,.5)}#targetNow .nowh{color:#00ba7c}"
 ".dayh{font-size:15px;color:#8b98a5;margin:16px 0 0;font-weight:600}"
+".stalelab{font-size:12px;font-weight:600;color:#8b98a5;background:#2f3336;border-radius:99px;padding:2px 8px;margin-left:6px}.stalelab:empty{display:none}"
+".pinbtn{font-size:13px;background:#16181c;color:#8b98a5;border:1px solid #2f3336;border-radius:99px;padding:4px 10px;touch-action:manipulation}.pinbtn.on{color:#ffd400;border-color:#ffd400}"
+".stale{opacity:.72}"
 ".ntag{font-size:12px;color:#8b98a5}.revnote{color:#ffad1f;margin:4px 0 8px}"
 )
 
@@ -746,7 +802,7 @@ for o in opps:
     nt=f'<div class="q" style="color:#ffad1f">⚠️ {E(o["note"])}</div>' if o.get('note') else ''
     rp='1' if o.get('replied') else '0'; lk='1' if o.get('liked') else '0'
     out.append(
-        f'<details class="oi" data-id="{o["id"]}" data-replied="{rp}" data-liked="{lk}" data-h="{E(o["author"])}" data-d="{E(o["caption"].strip())}" data-thread="{E(o["title"])}" data-url="https://x.com/{o["author"]}/status/{o["id"]}">'
+        f'<details class="oi"{_agea(o)} data-id="{o["id"]}" data-replied="{rp}" data-liked="{lk}" data-h="{E(o["author"])}" data-d="{E(o["caption"].strip())}" data-thread="{E(o["title"])}" data-url="https://x.com/{o["author"]}/status/{o["id"]}">'
         f'<summary><div class="t"><span class="tt">{E(o["title"])}</span>{('<span class="b" style="background:#00ba7c">🎯 target</span>') if o['_trank'] is not None else '<span class="b z ntag">not a target</span>'}</div>'
         f'<div class="st">@{E(o["author"])}</div>{statline("original post",st,o.get("stats_at"))}</summary>'
         f'<div class="in"><div class="q"><a target="_blank" rel="noopener" href="https://x.com/{o["author"]}/status/{o["id"]}">Open original post ↗</a></div>'
@@ -776,7 +832,7 @@ for bi,b in enumerate(bs,1):
         rp='1' if r.get('replied') else '0'; lk='1' if r.get('liked') else '0'
         ver=f'<div class="q" style="color:#00ba7c">verified reply on X ✓</div>' if r.get('replied') and r.get('my_reply_id') else ''
         out.append(
-            f'<div class="r bi" data-id="{r["id"]}" data-h="{E(r["handle"])}" data-d="{E(r["draft"].strip())}" data-replied="{rp}" data-liked="{lk}" data-thread="{E(r["thread"])}" data-url="{url}">'
+            f'<div class="r bi"{_agea(r)} data-id="{r["id"]}" data-h="{E(r["handle"])}" data-d="{E(r["draft"].strip())}" data-replied="{rp}" data-liked="{lk}" data-thread="{E(r["thread"])}" data-url="{url}">'
             f'<div class="q">{E(r["thread"])} · <b class="slab">their reply:</b> 👁 {fmt(r.get("views") or 0)}</div>'
             f'<div class="q"><a target="_blank" rel="noopener" href="{url}">@{E(r["handle"])}</a>: “{E(r["said"])}”</div>'
             f'<div class="d">{E(r["draft"])}</div>{"<div class=\"dupflag\">⚠️ similar opening to another draft — rewrite before posting</div>" if r["id"] in dup_ids else ""}{chips(r.get("replied"), r.get("liked"))}{ver}'
@@ -813,7 +869,7 @@ for s in secs:
         url=f'https://x.com/{r["handle"]}/status/{r["id"]}'
         rp='1' if r.get('replied') else '0'; lk='1' if r.get('liked') else '0'
         out.append(
-            f'<div class="r ri" data-id="{r["id"]}" data-h="{E(r["handle"])}" data-d="{E(r["draft"].strip())}" data-replied="{rp}" data-liked="{lk}" data-thread="{E(s["title"])}" data-url="{url}">'
+            f'<div class="r ri"{_agea(r)} data-id="{r["id"]}" data-h="{E(r["handle"])}" data-d="{E(r["draft"].strip())}" data-replied="{rp}" data-liked="{lk}" data-thread="{E(s["title"])}" data-url="{url}">'
             f'<div class="q"><a target="_blank" rel="noopener" href="{url}">@{E(r["handle"])}</a>: “{E(r["said"])}” · <b class="slab">their reply:</b> 👁 {fmt(r.get("views") or 0)}</div>'
             f'<div class="d">{E(r["draft"])}</div>{"<div class=\"dupflag\">⚠️ similar opening to another draft — rewrite before posting</div>" if r["id"] in dup_ids else ""}{chips(r.get("replied"), r.get("liked"))}'
             f'<div class="btn-row"><a target="_blank" rel="noopener" class="btn likebtn" style="flex:0 0 32%;background:#f91880" href="{llink}" data-href="{llink}">❤️ Like</a>'
@@ -916,6 +972,7 @@ out.append(''.join(H))
 out.append(RESET.replace('__RESET__',json.dumps(d.get('post_reset') or {})))
 out.append(MAN)
 out.append(NOWJS)
+out.append(STALEJS)
 out.append(
  '</div><button type="button" id="jumpLast" onclick="jumpToLast()">📍 Jump to where I left off</button>'
  '<script>function tab(n){var sec=(n==2);if(sec)n=1;for(const i of [1,2,3,4]){var t=document.getElementById("t"+i),b=document.getElementById("b"+i);if(t)t.style.display=i==n?"":"none";if(b)b.className=i==n?"on":""}var b2=document.getElementById("b2");if(b2)b2.className=sec?"on":"";if(sec){var b1=document.getElementById("b1");if(b1)b1.className="";var ts=document.getElementById("t2sec");if(ts)setTimeout(function(){ts.scrollIntoView({block:"start"})},30)}localStorage.tabv2=n}'
